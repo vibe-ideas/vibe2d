@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vibe2d",
+    "crates/vibe_render",
+    "crates/vibe_physics",
+    "crates/vibe_audio",
+    "crates/vibe_input",
+    "crates/vibe_asset",
+    "crates/vibe_debug",
+    "crates/vibe_platform",
+    "tools/vibe-cli",
+    "examples/flappy-bird",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Internal crates
+vibe2d = { path = "crates/vibe2d" }
+vibe_render = { path = "crates/vibe_render" }
+vibe_physics = { path = "crates/vibe_physics" }
+vibe_audio = { path = "crates/vibe_audio" }
+vibe_input = { path = "crates/vibe_input" }
+vibe_asset = { path = "crates/vibe_asset" }
+vibe_debug = { path = "crates/vibe_debug" }
+vibe_platform = { path = "crates/vibe_platform" }
+
+# External dependencies
+wgpu = "24"
+winit = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
+glam = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-tungstenite = "0.26"
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+rand = "0.9"
+fontdue = "0.9"
+rodio = { version = "0.20", default-features = false, features = ["wav"] }

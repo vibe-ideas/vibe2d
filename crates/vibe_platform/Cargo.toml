@@ -1,0 +1,14 @@
+[package]
+name = "vibe_platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+vibe_render = { workspace = true }
+vibe_input = { workspace = true }
+wgpu.workspace = true
+winit.workspace = true
+pollster.workspace = true
+anyhow.workspace = true
+tracing.workspace = true

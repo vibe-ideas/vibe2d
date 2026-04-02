@@ -1,0 +1,45 @@
+meta:
+  name: "Flappy Bird"
+  version: "0.1.0"
+
+window:
+  width: 1280
+  height: 720
+  title: "Flappy Bird - Vibe2D"
+  vsync: true
+
+virtual_resolution:
+  width: 512
+  height: 288
+
+assets:
+  textures:
+    background: "assets/images/background/10_background.png"
+    distant_clouds1: "assets/images/background/09_distant_clouds.png"
+    distant_clouds2: "assets/images/background/08_distant_clouds.png"
+    clouds: "assets/images/background/07_clouds.png"
+    huge_clouds: "assets/images/background/06_huge_clouds.png"
+    hill2: "assets/images/background/05_hill2.png"
+    hill1: "assets/images/background/04_hill1.png"
+    bushes: "assets/images/background/03_bushes.png"
+    distant_trees: "assets/images/background/02_distant_trees.png"
+    trees_and_bushes: "assets/images/background/01_trees and bushes.png"
+    ground: "assets/images/ground.png"
+    bird: "assets/sprites/bird.png"
+    pipe: "assets/sprites/pipe.png"
+  fonts:
+    score: "assets/fonts/flappy.ttf:32"
+    ui: "assets/fonts/flappy.ttf:16"
+  audio:
+    flap: "assets/sfx/bird-flap.wav"
+    hurt: "assets/sfx/bird-hurt.wav"
+
+input:
+  actions:
+    flap:
+      keys: ["Space"]
+
+debug:
+  vdp:
+    enabled: true
+    port: 9229
