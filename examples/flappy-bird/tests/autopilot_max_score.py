@@ -166,15 +166,11 @@ async def main():
             await step_and_wait(ws, 1)
             frame += 1
 
-            if frame > 30000:
-                print(f"\n[f{frame}] 帧数上限! 最终得分: {score}")
-                await rpc(ws, "engine.resume")
-                break
-
         print(f"\n{'=' * 50}")
         print(f"最终得分: {last_score}")
         print(f"总帧数: {frame}")
         print(f"{'=' * 50}")
+        await rpc(ws, "engine.resume")
 
 
 asyncio.run(main())
