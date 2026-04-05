@@ -11,6 +11,8 @@ members = [
     "crates/vibe_platform",
     "tools/vibe-cli",
     "examples/flappy-bird",
+    "examples/tetris",
+    "examples/portario",
 ]
 
 [workspace.package]

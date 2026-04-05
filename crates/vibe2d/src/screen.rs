@@ -1,4 +1,5 @@
 use vibe_render::{Font, Renderer, TextureId};
+use crate::Color;
 
 /// The render target for the current frame. Users draw to this.
 pub struct Screen<'a> {
@@ -23,6 +24,7 @@ impl<'a> Screen<'a> {
             src_rect: [0.0, 0.0, 1.0, 1.0],
             dst_rect: [x, y, width, height],
             color: [1.0, 1.0, 1.0, 1.0],
+            flip_x: false,
             flip_y: false,
         });
     }
@@ -41,6 +43,45 @@ impl<'a> Screen<'a> {
             src_rect: [0.0, 0.0, 1.0, 1.0],
             dst_rect: [x, y, width, height],
             color: [1.0, 1.0, 1.0, 1.0],
+            flip_x: false,
+            flip_y: true,
+        });
+    }
+
+    /// Draw a sprite flipped horizontally (used for left-facing characters, etc.).
+    pub fn draw_sprite_flipped_h(
+        &mut self,
+        texture_id: TextureId,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) {
+        self.renderer.draw_sprite(vibe_render::DrawCommand {
+            texture_id,
+            src_rect: [0.0, 0.0, 1.0, 1.0],
+            dst_rect: [x, y, width, height],
+            color: [1.0, 1.0, 1.0, 1.0],
+            flip_x: true,
+            flip_y: false,
+        });
+    }
+
+    /// Draw a sprite flipped on both axes.
+    pub fn draw_sprite_flipped_both(
+        &mut self,
+        texture_id: TextureId,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) {
+        self.renderer.draw_sprite(vibe_render::DrawCommand {
+            texture_id,
+            src_rect: [0.0, 0.0, 1.0, 1.0],
+            dst_rect: [x, y, width, height],
+            color: [1.0, 1.0, 1.0, 1.0],
+            flip_x: true,
             flip_y: true,
         });
     }
@@ -57,7 +98,27 @@ impl<'a> Screen<'a> {
             src_rect,
             dst_rect,
             color: [1.0, 1.0, 1.0, 1.0],
+            flip_x: false,
             flip_y: false,
+        });
+    }
+
+    /// Draw a sub-region of a sprite with flip control.
+    pub fn draw_sprite_region_flipped(
+        &mut self,
+        texture_id: TextureId,
+        src_rect: [f32; 4],
+        dst_rect: [f32; 4],
+        flip_x: bool,
+        flip_y: bool,
+    ) {
+        self.renderer.draw_sprite(vibe_render::DrawCommand {
+            texture_id,
+            src_rect,
+            dst_rect,
+            color: [1.0, 1.0, 1.0, 1.0],
+            flip_x,
+            flip_y,
         });
     }
 
@@ -69,6 +130,7 @@ impl<'a> Screen<'a> {
                 src_rect,
                 dst_rect,
                 color: [1.0, 1.0, 1.0, 1.0],
+                flip_x: false,
                 flip_y: false,
             });
         }
@@ -79,5 +141,63 @@ impl<'a> Screen<'a> {
         let text_w = font.text_width(text);
         let x = (self.virtual_width - text_w) / 2.0;
         self.draw_text(font, text, x, y);
+    }
+
+    /// Draw a sprite with color tinting (color is multiplied with texture color).
+    pub fn draw_sprite_tinted(
+        &mut self,
+        texture_id: TextureId,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: Color,
+    ) {
+        self.renderer.draw_sprite(vibe_render::DrawCommand {
+            texture_id,
+            src_rect: [0.0, 0.0, 1.0, 1.0],
+            dst_rect: [x, y, width, height],
+            color: color.to_array(),
+            flip_x: false,
+            flip_y: false,
+        });
+    }
+
+    /// Draw a sub-region of a sprite with color tinting.
+    pub fn draw_sprite_region_tinted(
+        &mut self,
+        texture_id: TextureId,
+        src_rect: [f32; 4],
+        dst_rect: [f32; 4],
+        color: Color,
+    ) {
+        self.renderer.draw_sprite(vibe_render::DrawCommand {
+            texture_id,
+            src_rect,
+            dst_rect,
+            color: color.to_array(),
+            flip_x: false,
+            flip_y: false,
+        });
+    }
+
+    /// Draw a sub-region of a sprite with flip control and color tinting.
+    pub fn draw_sprite_region_flipped_tinted(
+        &mut self,
+        texture_id: TextureId,
+        src_rect: [f32; 4],
+        dst_rect: [f32; 4],
+        flip_x: bool,
+        flip_y: bool,
+        color: Color,
+    ) {
+        self.renderer.draw_sprite(vibe_render::DrawCommand {
+            texture_id,
+            src_rect,
+            dst_rect,
+            color: color.to_array(),
+            flip_x,
+            flip_y,
+        });
     }
 }

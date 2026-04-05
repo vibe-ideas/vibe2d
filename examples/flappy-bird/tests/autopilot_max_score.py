@@ -39,16 +39,11 @@ async def rpc(ws, method, params=None):
     return json.loads(resp)
 
 
-async def step_and_wait(ws, frames=1):
-    r = await rpc(ws, "engine.getTime")
-    fc_before = r["result"]["frame_count"]
+async def step(ws, frames=1):
+    """Send step command. The next RPC (e.g. inspect) will naturally
+    execute after this step completes, since the engine processes
+    one message per frame in FIFO order."""
     await rpc(ws, "engine.step", {"frames": frames})
-    for _ in range(200):
-        r = await rpc(ws, "engine.getTime")
-        if r["result"]["frame_count"] >= fc_before + frames:
-            return r
-        await asyncio.sleep(0.005)
-    return r
 
 
 def sim_future_with_rule(y, vy, target_y, pipe_x, gap_y, n_frames, ground_top):
@@ -156,15 +151,15 @@ async def main():
                 await rpc(ws, "engine.simulateInput",
                           {"device": "keyboard", "action": "tap", "key": "Space"})
 
+            await step(ws, 1)
+            frame += 1
+
             # 每 120 帧打印状态
             if frame % 120 == 0:
                 p_info = ""
                 if nearest:
                     p_info = f" pipe=({nearest['x']:.0f},gap={nearest['gap_y']:.0f})"
                 print(f"  [f{frame}] y={by:.1f} vy={bvy:.1f} sc={score}{p_info}")
-
-            await step_and_wait(ws, 1)
-            frame += 1
 
         print(f"\n{'=' * 50}")
         print(f"最终得分: {last_score}")

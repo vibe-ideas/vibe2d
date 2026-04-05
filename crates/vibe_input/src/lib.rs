@@ -176,8 +176,14 @@ pub fn string_to_keycode(s: &str) -> Option<KeyCode> {
         "B" => Some(KeyCode::KeyB),
         "C" => Some(KeyCode::KeyC),
         "D" => Some(KeyCode::KeyD),
+        "E" => Some(KeyCode::KeyE),
+        "F" => Some(KeyCode::KeyF),
         "W" => Some(KeyCode::KeyW),
         "S" => Some(KeyCode::KeyS),
+        "X" => Some(KeyCode::KeyX),
+        "Z" => Some(KeyCode::KeyZ),
+        "ShiftLeft" => Some(KeyCode::ShiftLeft),
+        "ShiftRight" => Some(KeyCode::ShiftRight),
         _ => None,
     }
 }

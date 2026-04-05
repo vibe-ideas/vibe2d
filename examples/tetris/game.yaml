@@ -1,0 +1,51 @@
+meta:
+  name: "Tetris"
+  version: "0.1.0"
+
+window:
+  width: 800
+  height: 700
+  title: "Tetris - Vibe2D"
+  vsync: true
+
+virtual_resolution:
+  width: 800
+  height: 700
+
+assets:
+  textures:
+    bg: "assets/bg.png"
+    block_i: "assets/blocks/block_i.png"
+    block_o: "assets/blocks/block_o.png"
+    block_t: "assets/blocks/block_t.png"
+    block_s: "assets/blocks/block_s.png"
+    block_z: "assets/blocks/block_z.png"
+    block_j: "assets/blocks/block_j.png"
+    block_l: "assets/blocks/block_l.png"
+    block_ghost: "assets/blocks/block_ghost.png"
+    block_garbage: "assets/blocks/block_garbage.png"
+  fonts:
+    ui: "assets/fonts/game.ttf:16"
+    title: "assets/fonts/game.ttf:24"
+
+input:
+  actions:
+    move_left:
+      keys: ["Left"]
+    move_right:
+      keys: ["Right"]
+    rotate_cw:
+      keys: ["Up", "X"]
+    rotate_ccw:
+      keys: ["Z"]
+    soft_drop:
+      keys: ["Down"]
+    hard_drop:
+      keys: ["Space"]
+    hold:
+      keys: ["C"]
+
+debug:
+  vdp:
+    enabled: true
+    port: 9229

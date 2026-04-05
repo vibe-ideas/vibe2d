@@ -18,6 +18,7 @@ pub struct DrawCommand {
     pub src_rect: [f32; 4],   // x, y, w, h in UV coordinates (0..1)
     pub dst_rect: [f32; 4],   // x, y, w, h in virtual pixels
     pub color: [f32; 4],
+    pub flip_x: bool,
     pub flip_y: bool,
 }
 
@@ -243,6 +244,11 @@ impl Renderer {
             let [dx, dy, dw, dh] = cmd.dst_rect;
             let [su, sv, sw, sh] = cmd.src_rect;
 
+            let (tu_left, tu_right) = if cmd.flip_x {
+                (su + sw, su)
+            } else {
+                (su, su + sw)
+            };
             let (tv_top, tv_bottom) = if cmd.flip_y {
                 (sv + sh, sv)
             } else {
@@ -251,22 +257,22 @@ impl Renderer {
 
             vertices.push(SpriteVertex {
                 position: [dx, dy],
-                tex_coords: [su, tv_top],
+                tex_coords: [tu_left, tv_top],
                 color: cmd.color,
             });
             vertices.push(SpriteVertex {
                 position: [dx + dw, dy],
-                tex_coords: [su + sw, tv_top],
+                tex_coords: [tu_right, tv_top],
                 color: cmd.color,
             });
             vertices.push(SpriteVertex {
                 position: [dx + dw, dy + dh],
-                tex_coords: [su + sw, tv_bottom],
+                tex_coords: [tu_right, tv_bottom],
                 color: cmd.color,
             });
             vertices.push(SpriteVertex {
                 position: [dx, dy + dh],
-                tex_coords: [su, tv_bottom],
+                tex_coords: [tu_left, tv_bottom],
                 color: cmd.color,
             });
         }
