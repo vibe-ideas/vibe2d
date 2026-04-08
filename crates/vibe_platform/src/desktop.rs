@@ -29,6 +29,7 @@ pub trait PlatformCallbacks {
     fn on_render(&mut self, renderer: &mut Renderer);
     fn clear_color(&self) -> [f32; 4];
     fn get_textures(&self) -> Vec<&vibe_render::Texture>;
+    fn should_render(&self) -> bool { true }
 }
 
 struct App<C: PlatformCallbacks> {
@@ -186,13 +187,15 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                 // Update
                 self.callbacks.on_update(dt, &mut self.input);
 
-                // Render
-                if let Some(renderer) = &mut self.renderer {
-                    self.callbacks.on_render(renderer);
-                    let clear_color = self.callbacks.clear_color();
-                    let textures = self.callbacks.get_textures();
-                    if let Err(e) = renderer.render(clear_color, &textures) {
-                        tracing::error!("Render error: {}", e);
+                // Render (skip when VDP fast-forward is active)
+                if self.callbacks.should_render() {
+                    if let Some(renderer) = &mut self.renderer {
+                        self.callbacks.on_render(renderer);
+                        let clear_color = self.callbacks.clear_color();
+                        let textures = self.callbacks.get_textures();
+                        if let Err(e) = renderer.render(clear_color, &textures) {
+                            tracing::error!("Render error: {}", e);
+                        }
                     }
                 }
 

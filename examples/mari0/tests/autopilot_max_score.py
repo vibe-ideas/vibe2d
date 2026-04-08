@@ -52,6 +52,17 @@ async def step(ws, n=1):
         await asyncio.sleep(0.003)
     return r
 
+async def step_and_inspect(ws, n=1, inputs=None):
+    """Optimized: step N frames + inspect in a single RPC (no polling)."""
+    params = {"frames": n}
+    if inputs:
+        params["inputs"] = inputs
+    r = await rpc(ws, "engine.stepAndInspect", params)
+    return r.get("result", {})
+
+async def set_rendering(ws, enabled):
+    await rpc(ws, "engine.setRendering", {"enabled": enabled})
+
 async def get_state(ws):
     r = await rpc(ws, "game.inspect")
     return r.get("result", {})
@@ -189,6 +200,9 @@ class Autopilot:
         self.sprint_held = False
         self.jump_hold_remaining = 0
 
+        # Queued inputs for current frame (sent via stepAndInspect)
+        self.pending_inputs = []
+
         # Progress tracking
         self.x_history = []
         self.HISTORY_LEN = 90
@@ -219,49 +233,58 @@ class Autopilot:
         self.prev_is_fire = False
         self.prev_is_big = False
 
-    # ── Key helpers ──
+    # ── Key helpers (synchronous queue — batched in stepAndInspect) ──
 
-    async def hold_sprint(self, ws):
+    def queue_press(self, key):
+        self.pending_inputs.append({"device": "keyboard", "action": "press", "key": key})
+
+    def queue_release(self, key):
+        self.pending_inputs.append({"device": "keyboard", "action": "release", "key": key})
+
+    def queue_tap(self, key):
+        self.pending_inputs.append({"device": "keyboard", "action": "tap", "key": key})
+
+    def hold_sprint(self):
         if not self.sprint_held:
-            await press(ws, "ShiftLeft")
+            self.queue_press("ShiftLeft")
             self.sprint_held = True
 
-    async def release_sprint(self, ws):
+    def release_sprint(self):
         if self.sprint_held:
-            await release(ws, "ShiftLeft")
+            self.queue_release("ShiftLeft")
             self.sprint_held = False
 
-    async def hold_right(self, ws):
+    def hold_right(self):
         if not self.right_held:
-            await press(ws, "Right")
+            self.queue_press("Right")
             self.right_held = True
 
-    async def release_right(self, ws):
+    def release_right(self):
         if self.right_held:
-            await release(ws, "Right")
+            self.queue_release("Right")
             self.right_held = False
 
-    async def hold_left(self, ws):
+    def hold_left(self):
         if not self.left_held:
-            await press(ws, "Left")
+            self.queue_press("Left")
             self.left_held = True
 
-    async def release_left(self, ws):
+    def release_left(self):
         if self.left_held:
-            await release(ws, "Left")
+            self.queue_release("Left")
             self.left_held = False
 
-    async def start_jump(self, ws, hold=14):
+    def start_jump(self, hold=14):
         if not self.jump_held:
-            await press(ws, "Space")
+            self.queue_press("Space")
             self.jump_held = True
             self.jump_hold_remaining = hold
 
-    async def update_jump(self, ws):
+    def update_jump(self):
         if self.jump_hold_remaining > 0:
             self.jump_hold_remaining -= 1
             if self.jump_hold_remaining == 0 and self.jump_held:
-                await release(ws, "Space")
+                self.queue_release("Space")
                 self.jump_held = False
 
     # ── State helpers ──
@@ -420,13 +443,13 @@ class Autopilot:
 
     # ── Backup maneuver (when stuck) ──
 
-    async def handle_backup(self, ws, state):
+    def handle_backup(self, state):
         """Back up, then return to normal — let triggers handle the jump."""
         if self.backup_phase == 1:
             self.backup_timer -= 1
             if self.backup_timer <= 0:
-                await self.release_left(ws)
-                await self.hold_right(ws)
+                self.release_left()
+                self.hold_right()
                 self.backup_phase = 0
                 self.x_history.clear()
             return True
@@ -462,36 +485,36 @@ class Autopilot:
         if len(self.x_history) > self.HISTORY_LEN:
             self.x_history.pop(0)
 
-        await self.update_jump(ws)
+        self.update_jump()
 
         # Backup maneuver in progress
-        if await self.handle_backup(ws, state):
+        if self.handle_backup(state):
             return
 
         # ── Portal at early flat area (safe zone, no enemies) ──
         if not self.portal_used and 130 < px < 250 and self.portal_phase < 2:
             await self.do_portal(ws, state)
-            await self.hold_right(ws)
+            self.hold_right()
             return
         if self.portal_phase == 1:
             await self.do_portal(ws, state)
-            await self.hold_right(ws)
+            self.hold_right()
             return
 
         # ── Movement: conditional right (allow stopping for items) ──
         if self.slow_for_item > 0:
             # Stopped waiting for item — item collection logic controls movement
-            await self.release_right(ws)
-            await self.release_sprint(ws)
+            self.release_right()
+            self.release_sprint()
         elif self.item_hunt_phase != 3:
             # Normal movement
-            await self.hold_right(ws)
+            self.hold_right()
 
         # ── Sprint: near obstacles ──
         if self.in_sprint_zone(px):
-            await self.hold_sprint(ws)
+            self.hold_sprint()
         else:
-            await self.release_sprint(ws)
+            self.release_sprint()
 
         # ── Wall-stuck instant jump (blocked by staircase step) ──
         vx = p.get("vx", 999)
@@ -499,9 +522,9 @@ class Autopilot:
             if self.in_staircase_area(px):
                 if self.is_truly_stuck():
                     print(f"    Stuck@{px:.0f}: staircase backup")
-                    await self.release_right(ws)
-                    await self.release_sprint(ws)
-                    await self.hold_left(ws)
+                    self.release_right()
+                    self.release_sprint()
+                    self.hold_left()
                     self.backup_phase = 1
                     self.backup_timer = 110
                     self.x_history.clear()
@@ -510,15 +533,15 @@ class Autopilot:
                     for start_col, end_col in STAIR_WALLS:
                         self.consumed_jumps.discard(f"stair_{start_col}")
                     return
-                await self.start_jump(ws, 14)
+                self.start_jump(14)
                 return
 
         # ── Stuck: initiate backup ──
         if self.is_truly_stuck() and on_ground:
             print(f"    Stuck@{px:.0f}: backup maneuver")
-            await self.release_right(ws)
-            await self.release_sprint(ws)
-            await self.hold_left(ws)
+            self.release_right()
+            self.release_sprint()
+            self.hold_left()
             self.backup_phase = 1
             self.backup_timer = 110
             self.x_history.clear()
@@ -545,7 +568,7 @@ class Autopilot:
                             break
                 if not delay_for_item:
                     self.item_hunt_phase = 0
-                    await self.start_jump(ws, hold)
+                    self.start_jump(hold)
                     return
 
         # ── Fireball: shoot continuously when Mario has fire power ──
@@ -554,7 +577,7 @@ class Autopilot:
         if is_fire and self.fireball_cooldown <= 0:
             enemy_ahead, ea_dist = nearest_enemy_ahead(state, max_dist=TILE * 12)
             if enemy_ahead:
-                await tap(ws, "F")
+                self.queue_tap("F")
                 self.fireball_cooldown = 15  # shoot every ~15 frames
 
         # ── Enemy avoidance (ALWAYS runs) ──
@@ -562,20 +585,20 @@ class Autopilot:
         if enemy and on_ground and not self.jump_held:
             if edist < TILE * 5:
                 if self.item_hunt_phase == 3:
-                    await self.release_left(ws)
-                    await self.hold_right(ws)
+                    self.release_left()
+                    self.hold_right()
                     self.item_hunt_phase = 0
-                await self.start_jump(ws, 14)
+                self.start_jump(14)
                 return
 
         # ── Enemy behind detection (bounced goombas approaching from rear) ──
         enemy_behind, bdist = nearest_enemy_behind(state, max_dist=TILE * 3)
         if enemy_behind and on_ground and not self.jump_held:
             if self.item_hunt_phase == 3:
-                await self.release_left(ws)
-                await self.hold_right(ws)
+                self.release_left()
+                self.hold_right()
                 self.item_hunt_phase = 0
-            await self.start_jump(ws, 10)
+            self.start_jump(10)
             return
 
         # ── Slow down counter: clear if item already collected ──
@@ -603,17 +626,17 @@ class Autopilot:
                 if on_ground and not self.jump_held:
                     if dx < TILE * 2:
                         # Too close — back up to get sprint-jump distance
-                        await self.release_right(ws)
-                        await self.hold_left(ws)
+                        self.release_right()
+                        self.hold_left()
                         self.item_hunt_phase = 3
                         self.item_hunt_timer = 80
                         return
                     else:
                         # Far enough left — sprint jump over the block
-                        await self.release_left(ws)
-                        await self.hold_right(ws)
-                        await self.hold_sprint(ws)
-                        await self.start_jump(ws, 14)
+                        self.release_left()
+                        self.hold_right()
+                        self.hold_sprint()
+                        self.start_jump(14)
                         self.item_hunt_phase = 0
                         return
             elif itype != "fire_flower":
@@ -622,33 +645,33 @@ class Autopilot:
                     # Item behind us — go back for it
                     if on_ground and not self.jump_held:
                         chase_time = 60 if itype == "star" else 120
-                        await self.release_right(ws)
-                        await self.release_sprint(ws)
-                        await self.hold_left(ws)
+                        self.release_right()
+                        self.release_sprint()
+                        self.hold_left()
                         self.item_hunt_phase = 3
                         self.item_hunt_timer = chase_time
                         return
                 elif 0 <= dx < TILE * 8:
                     # Item ahead — walk toward it
                     if not self.in_sprint_zone(px):
-                        await self.release_sprint(ws)
-                    await self.hold_right(ws)
+                        self.release_sprint()
+                    self.hold_right()
                 elif self.item_hunt_phase == 3:
                     # Were chasing left, item now far ahead — resume right
-                    await self.release_left(ws)
-                    await self.hold_right(ws)
+                    self.release_left()
+                    self.hold_right()
                     self.item_hunt_phase = 0
                     self.item_hunt_timer = 0
 
                 # Item above us (star bouncing) — jump to catch
                 if abs(dx) < TILE * 3 and dy < -TILE * 1.0 and on_ground and not self.jump_held:
                     hold = min(14, max(6, int(-dy / TILE * 3)))
-                    await self.start_jump(ws, hold)
+                    self.start_jump(hold)
                     return
         elif self.item_hunt_phase == 3:
             # In danger zone or no collectible — cancel backwards chase
-            await self.release_left(ws)
-            await self.hold_right(ws)
+            self.release_left()
+            self.hold_right()
             self.item_hunt_phase = 0
             self.item_hunt_timer = 0
 
@@ -656,8 +679,8 @@ class Autopilot:
         if self.item_hunt_phase == 3:
             self.item_hunt_timer -= 1
             if self.item_hunt_timer <= 0 or not collectible:
-                await self.release_left(ws)
-                await self.hold_right(ws)
+                self.release_left()
+                self.hold_right()
                 self.item_hunt_phase = 0
                 self.item_hunt_timer = 0
 
@@ -674,29 +697,29 @@ class Autopilot:
                 if abs(dx_to_block) < TILE * 1.2:
                     # Under the block — jump!
                     self.blocks_hit.add((target_block["row"], target_block["col"]))
-                    await self.release_sprint(ws)
-                    await self.start_jump(ws, 10)
+                    self.release_sprint()
+                    self.start_jump(10)
                     self.slow_for_item = 120
                     print(f"    Item: hitting {target_block['content']} block at col={target_block['col']}")
                     return
                 elif 0 < dx_to_block < TILE * 3:
                     # Approaching block — release sprint to avoid overshooting
                     if not self.in_sprint_zone(px):
-                        await self.release_sprint(ws)
+                        self.release_sprint()
 
         # ── Pre-obstacle jumping (pipes, stairs) ──
         if on_ground and not self.jump_held:
             obs = self.approaching_pipe(px)
             if obs:
                 hold, key = obs
-                await self.start_jump(ws, hold)
+                self.start_jump(hold)
                 self.consumed_jumps.add(key)
                 return
 
             obs = self.approaching_staircase(px)
             if obs and p.get("vx", 0) > 100:
                 hold, key = obs
-                await self.start_jump(ws, hold)
+                self.start_jump(hold)
                 self.consumed_jumps.add(key)
                 return
 
@@ -721,11 +744,11 @@ class Autopilot:
                     if abs(dx_e) < TILE * 2 and -TILE < dy_e < TILE * 0.5:
                         if dx_e > 0:
                             # Enemy ahead — pull back
-                            await self.release_right(ws)
+                            self.release_right()
                         else:
                             # Enemy behind — speed up
-                            await self.hold_right(ws)
-                            await self.release_left(ws)
+                            self.hold_right()
+                            self.release_left()
                         air_adjusted = True
                         break
                 # Track collectible items while airborne
@@ -737,11 +760,11 @@ class Autopilot:
                     dy_item = iy - (py + p["height"] / 2)
                     if abs(dx_item) < TILE * 4 and abs(dy_item) < TILE * 3:
                         if dx_item < -TILE * 0.5:
-                            await self.release_right(ws)
-                            await self.hold_left(ws)
+                            self.release_right()
+                            self.hold_left()
                         elif dx_item > TILE * 0.5:
-                            await self.release_left(ws)
-                            await self.hold_right(ws)
+                            self.release_left()
+                            self.hold_right()
 
         # ── Periodic jumping (fallback) ──
         if on_ground:
@@ -751,19 +774,17 @@ class Autopilot:
 
         if on_ground and not self.jump_held:
             if self.in_staircase_area(px) and self.frames_on_ground > 5:
-                await self.start_jump(ws, 8)
+                self.start_jump(8)
                 self.frames_on_ground = 0
             elif self.frames_on_ground > 25:
                 if not self.should_skip_periodic_jump(px):
-                    await self.start_jump(ws, 14)
+                    self.start_jump(14)
                     self.frames_on_ground = 0
 
-    async def cleanup(self, ws):
-        try:
-            for key in ["Right", "Left", "Space", "ShiftLeft"]:
-                await release(ws, key)
-        except Exception:
-            pass
+    def cleanup(self):
+        """Release all held keys via queue (will be sent with next stepAndInspect)."""
+        for key in ["Right", "Left", "Space", "ShiftLeft"]:
+            self.queue_release(key)
         self.right_held = self.left_held = False
         self.jump_held = self.sprint_held = False
 
@@ -779,9 +800,12 @@ async def main():
         async with websockets.connect(WS_URL) as ws:
             await rpc(ws, "engine.pause")
             await rpc(ws, "game.reset")
-            await step(ws, 5)
 
-            state = await get_state(ws)
+            # Initial steps to let the game settle
+            state = {}
+            for _ in range(5):
+                state = await step_and_inspect(ws, 1)
+
             flag_x = state["level"]["flag_x"]
             print(f"level: {state['level']['width']}x{state['level']['height']}, "
                   f"flag x={flag_x:.0f}")
@@ -797,15 +821,10 @@ async def main():
             portal_logged = False
 
             while frame < max_frames:
-                try:
-                    state = await get_state(ws)
-                except Exception:
-                    print("  [WS disconnect — game may have crashed]")
-                    break
                 gs = state.get("state")
 
                 if gs is None:
-                    await step(ws, 1)
+                    state = await step_and_inspect(ws, 1)
                     frame += 1
                     continue
 
@@ -825,26 +844,30 @@ async def main():
                               f"tc={p.get('teleport_cooldown', 0):.3f} "
                               f"near_enemies={len(enemies_near)}")
                         if state.get("lives", 0) > 0:
-                            await ai.cleanup(ws)
+                            ai.cleanup()
+                            cleanup_inputs = list(ai.pending_inputs)
+                            ai.pending_inputs = []
+                            cleanup_inputs.append({"device": "keyboard", "action": "tap", "key": "Space"})
+                            state = await step_and_inspect(ws, 10, cleanup_inputs)
                             ai = Autopilot()
                             ai.portal_used = True
-                            await tap(ws, "Space")
-                            await step(ws, 10)
                             continue
                         else:
                             print(f"\n  GAME OVER!")
                             break
                     elif gs == "menu":
-                        await tap(ws, "Space")
-                        await step(ws, 5)
+                        menu_inputs = [{"device": "keyboard", "action": "tap", "key": "Space"}]
+                        state = await step_and_inspect(ws, 5, menu_inputs)
                         continue
                     else:
-                        await step(ws, 1)
+                        state = await step_and_inspect(ws, 1)
                         frame += 1
                         continue
 
+                # ── Normal playing frame ──
+                ai.pending_inputs = []
                 await ai.tick(ws, state)
-                await step(ws, 1)
+                state = await step_and_inspect(ws, 1, ai.pending_inputs)
                 frame += 1
 
                 if ai.portal_phase == 1:
@@ -877,9 +900,13 @@ async def main():
                           f"items={items_on_field} pwr_blocks={blocks_remaining} {star} "
                           f"time={state['time_remaining']:.0f}  ({el:.1f}s)")
 
-            await ai.cleanup(ws)
+            # Final cleanup
+            ai.cleanup()
+            if ai.pending_inputs:
+                state = await step_and_inspect(ws, 1, ai.pending_inputs)
+            else:
+                state = await step_and_inspect(ws, 0)
 
-            state = await get_state(ws)
             el = time.time() - t0
             p = state.get("player", {})
             pct = p.get("x", 0) / flag_x * 100 if flag_x > 0 else 0

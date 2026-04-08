@@ -59,6 +59,12 @@ enum SimulatedInput {
     MouseButtonClick(vibe_input::MouseButton),
 }
 
+#[cfg(feature = "vdp")]
+struct PendingStepInspect {
+    id: serde_json::Value,
+    frames: u32,
+}
+
 // ── Main entry point ────────────────────────────────────────────────
 
 /// Main entry point. Loads config from YAML and starts the game loop.
@@ -150,6 +156,10 @@ pub fn run<G: Game + 'static>(config_path: &str) {
         pending_key_auto_releases: Vec::new(),
         #[cfg(feature = "vdp")]
         pending_mouse_auto_releases: Vec::new(),
+        #[cfg(feature = "vdp")]
+        pending_step_inspect: None,
+        #[cfg(feature = "vdp")]
+        vdp_skip_render: false,
     };
 
     vibe_platform::run_desktop(platform_config, bridge, input_state)
@@ -190,6 +200,10 @@ struct GameBridge<G: Game> {
     pending_key_auto_releases: Vec<vibe_input::KeyCode>,
     #[cfg(feature = "vdp")]
     pending_mouse_auto_releases: Vec<vibe_input::MouseButton>,
+    #[cfg(feature = "vdp")]
+    pending_step_inspect: Option<PendingStepInspect>,
+    #[cfg(feature = "vdp")]
+    vdp_skip_render: bool,
 }
 
 impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
@@ -242,6 +256,53 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
             // 2. Process VDP requests (may queue simulated inputs, modify paused/step_frames)
             self.process_vdp_requests();
 
+            // 2.5 Fast-forward: stepAndInspect tight loop (skip rendering)
+            if let Some(pending) = self.pending_step_inspect.take() {
+                // Inject all pending simulated inputs
+                self.inject_simulated_inputs(input);
+
+                let dt_step = 1.0 / 60.0;
+                for i in 0..pending.frames {
+                    if i > 0 {
+                        // Release tap keys from previous iteration
+                        for key in self.pending_key_auto_releases.drain(..) {
+                            input.on_key_released(key);
+                        }
+                        for btn in self.pending_mouse_auto_releases.drain(..) {
+                            input.on_mouse_button_released(btn);
+                        }
+                        input.begin_frame();
+                    }
+
+                    if let Some(game) = &mut self.game {
+                        let mut ctx = Context {
+                            assets: std::mem::take(&mut self.assets),
+                            audio: std::mem::take(&mut self.audio),
+                            virtual_width: self.virtual_width,
+                            virtual_height: self.virtual_height,
+                        };
+                        game.update(&mut ctx, dt_step, input);
+                        self.assets = ctx.assets;
+                        self.audio = ctx.audio;
+                    }
+                    self.frame_count += 1;
+                    self.elapsed_time += dt_step;
+                }
+
+                // Send inspect result as response
+                let result = if let Some(game) = &self.game {
+                    game.inspect()
+                } else {
+                    serde_json::Value::Null
+                };
+                if let Some(vdp) = &self.vdp {
+                    let _ = vdp.sender.send(vibe_debug::VdpResponse::success(pending.id, result));
+                }
+
+                self.last_dt = dt;
+                (false, 0.0) // skip normal update
+            } else {
+
             // 3. Determine if game.update will run this frame
             let will_update = !self.paused || self.step_frames > 0;
 
@@ -284,6 +345,7 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
             self.last_dt = dt;
 
             (will_update, effective_dt)
+            } // else (normal path)
         };
 
         #[cfg(not(feature = "vdp"))]
@@ -340,6 +402,11 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
     fn get_textures(&self) -> Vec<&vibe_render::Texture> {
         self.assets.all_textures()
     }
+
+    #[cfg(feature = "vdp")]
+    fn should_render(&self) -> bool {
+        !self.vdp_skip_render
+    }
 }
 
 // ── VDP request handling ────────────────────────────────────────────
@@ -355,6 +422,32 @@ impl<G: Game> GameBridge<G> {
         let requests: Vec<_> = std::iter::from_fn(|| vdp.receiver.try_recv().ok()).collect();
 
         for req in requests {
+            // stepAndInspect is deferred — response sent after tight loop in on_update
+            if req.method == "engine.stepAndInspect" {
+                if !self.paused {
+                    if let Some(vdp) = &self.vdp {
+                        let _ = vdp.sender.send(vibe_debug::VdpResponse::error(
+                            req.id.clone(), -32000, "Game is not paused",
+                        ));
+                    }
+                    continue;
+                }
+                let frames = req.params.get("frames")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1) as u32;
+                // Parse optional embedded inputs
+                if let Some(inputs) = req.params.get("inputs").and_then(|v| v.as_array()) {
+                    for input_val in inputs {
+                        self.parse_and_queue_input(input_val);
+                    }
+                }
+                self.pending_step_inspect = Some(PendingStepInspect {
+                    id: req.id.clone(),
+                    frames,
+                });
+                continue;
+            }
+
             let response = self.handle_vdp_request(&req);
             if let Some(vdp) = &self.vdp {
                 let _ = vdp.sender.send(response);
@@ -437,6 +530,34 @@ impl<G: Game> GameBridge<G> {
 
             "engine.simulateInput" => {
                 self.handle_simulate_input(req)
+            }
+
+            "engine.simulateInputBatch" => {
+                let inputs = match req.params.get("inputs").and_then(|v| v.as_array()) {
+                    Some(arr) => arr,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'inputs' array parameter",
+                    ),
+                };
+                let count = inputs.len();
+                for input_val in inputs {
+                    self.parse_and_queue_input(input_val);
+                }
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": count }),
+                )
+            }
+
+            "engine.setRendering" => {
+                let enabled = req.params.get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                self.vdp_skip_render = !enabled;
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "rendering": enabled }),
+                )
             }
 
             // ── Game inspection ──
@@ -591,6 +712,82 @@ impl<G: Game> GameBridge<G> {
                     format!("Unknown device: {}", device),
                 )
             }
+        }
+    }
+
+    /// Inject all pending simulated inputs into the InputState.
+    fn inject_simulated_inputs(&mut self, input: &mut vibe_input::InputState) {
+        for sim in self.pending_simulated.drain(..) {
+            match sim {
+                SimulatedInput::KeyPress(k) => input.on_key_pressed(k),
+                SimulatedInput::KeyRelease(k) => input.on_key_released(k),
+                SimulatedInput::KeyTap(k) => {
+                    input.on_key_pressed(k);
+                    self.pending_key_auto_releases.push(k);
+                }
+                SimulatedInput::MouseMove(x, y) => input.on_mouse_moved(x, y),
+                SimulatedInput::MouseButtonPress(b) => input.on_mouse_button_pressed(b),
+                SimulatedInput::MouseButtonRelease(b) => input.on_mouse_button_released(b),
+                SimulatedInput::MouseButtonClick(b) => {
+                    input.on_mouse_button_pressed(b);
+                    self.pending_mouse_auto_releases.push(b);
+                }
+            }
+        }
+    }
+
+    /// Parse a single input JSON object and queue it as a SimulatedInput.
+    fn parse_and_queue_input(&mut self, val: &serde_json::Value) {
+        let device = val.get("device").and_then(|v| v.as_str()).unwrap_or("keyboard");
+        let action = match val.get("action").and_then(|v| v.as_str()) {
+            Some(a) => a,
+            None => return,
+        };
+        match device {
+            "keyboard" => {
+                let key_name = match val.get("key").and_then(|v| v.as_str()) {
+                    Some(k) => k,
+                    None => return,
+                };
+                let keycode = match vibe_input::string_to_keycode(key_name) {
+                    Some(k) => k,
+                    None => return,
+                };
+                let sim = match action {
+                    "press" => SimulatedInput::KeyPress(keycode),
+                    "release" => SimulatedInput::KeyRelease(keycode),
+                    "tap" => SimulatedInput::KeyTap(keycode),
+                    _ => return,
+                };
+                self.pending_simulated.push(sim);
+            }
+            "mouse" => {
+                match action {
+                    "move" => {
+                        if let (Some(x), Some(y)) = (
+                            val.get("x").and_then(|v| v.as_f64()),
+                            val.get("y").and_then(|v| v.as_f64()),
+                        ) {
+                            self.pending_simulated.push(SimulatedInput::MouseMove(x as f32, y as f32));
+                        }
+                    }
+                    "press" | "release" | "click" => {
+                        if let Some(btn_name) = val.get("button").and_then(|v| v.as_str()) {
+                            if let Some(button) = vibe_input::string_to_mouse_button(btn_name) {
+                                let sim = match action {
+                                    "press" => SimulatedInput::MouseButtonPress(button),
+                                    "release" => SimulatedInput::MouseButtonRelease(button),
+                                    "click" => SimulatedInput::MouseButtonClick(button),
+                                    _ => return,
+                                };
+                                self.pending_simulated.push(sim);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
     }
 }
