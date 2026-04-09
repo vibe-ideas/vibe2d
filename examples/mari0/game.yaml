@@ -42,6 +42,26 @@ assets:
     title: "assets/fonts/game.ttf:24"
     score: "assets/fonts/game.ttf:12"
     hud: "assets/fonts/game.ttf:10"
+  audio:
+    jump: "assets/sounds/jump.ogg"
+    jumpbig: "assets/sounds/jumpbig.ogg"
+    stomp: "assets/sounds/stomp.ogg"
+    coin: "assets/sounds/coin.ogg"
+    blockhit: "assets/sounds/blockhit.ogg"
+    blockbreak: "assets/sounds/blockbreak.ogg"
+    mushroomappear: "assets/sounds/mushroomappear.ogg"
+    mushroomeat: "assets/sounds/mushroomeat.ogg"
+    shrink: "assets/sounds/shrink.ogg"
+    death: "assets/sounds/death.ogg"
+    fireball: "assets/sounds/fireball.ogg"
+    oneup: "assets/sounds/oneup.ogg"
+    portal1open: "assets/sounds/portal1open.ogg"
+    portal2open: "assets/sounds/portal2open.ogg"
+    portalenter: "assets/sounds/portalenter.ogg"
+    gameover: "assets/sounds/gameover.ogg"
+    levelend: "assets/sounds/levelend.ogg"
+    scorering: "assets/sounds/scorering.ogg"
+    shot: "assets/sounds/shot.ogg"
 
 input:
   actions:

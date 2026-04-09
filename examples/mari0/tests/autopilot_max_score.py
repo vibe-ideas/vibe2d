@@ -96,6 +96,11 @@ STAIR_WALLS = [
     (134, 137), (140, 143), (148, 152), (155, 158), (181, 189),
 ]
 
+# Flag approach: final staircase before flagpole (1-1 layout)
+FLAG_STAIR_COL = 181        # first col of ascending staircase
+FLAG_STAIR_TOP_COL = 189    # last col at peak (8 blocks high)
+FLAG_STAIR_TOP_ROW = 5      # highest row of staircase blocks
+
 # Tall pipes that require sprint (height >= 3)
 TALL_PIPES = [(c, h) for c, h in PIPES if h >= 3]
 
@@ -232,6 +237,9 @@ class Autopilot:
         # Damage tracking
         self.prev_is_fire = False
         self.prev_is_big = False
+
+        # Flag approach: climb staircase then sprint-jump to flagpole top
+        self.flag_approach = 0   # 0=normal, 1=climbing, 2=running_on_top, 3=jumped
 
     # ── Key helpers (synchronous queue — batched in stepAndInspect) ──
 
@@ -500,6 +508,56 @@ class Autopilot:
             await self.do_portal(ws, state)
             self.hold_right()
             return
+
+        # ── Flag approach: climb final staircase, sprint-jump to flagpole top ──
+        flag_x = state.get("level", {}).get("flag_x", 0)
+        if flag_x > 0:
+            approach_trigger_x = FLAG_STAIR_COL * TILE - TILE * 8
+
+            if self.flag_approach == 0 and px > approach_trigger_x:
+                self.flag_approach = 1
+                self.item_hunt_phase = 0
+                self.slow_for_item = 0
+                self.backup_phase = 0
+                self.release_left()
+                print(f"  Flag approach: climbing staircase (x={px:.0f})")
+
+            if self.flag_approach == 1:
+                # Phase 1: climbing the staircase with short jumps
+                self.hold_right()
+                self.hold_sprint()
+                if on_ground and not self.jump_held:
+                    stair_top_surface_y = (FLAG_STAIR_TOP_ROW + 1) * TILE  # y=192
+                    near_top_x = px > (FLAG_STAIR_TOP_COL - 2) * TILE     # past col 187
+                    at_top = py < stair_top_surface_y and near_top_x
+                    if at_top:
+                        # Reached the peak — transition to running phase
+                        self.flag_approach = 2
+                        print(f"  Flag approach: running on top to build speed "
+                              f"y={py:.0f} x={px:.0f}")
+                    else:
+                        # Still climbing — short jumps up the steps
+                        self.start_jump(8)
+                return
+
+            if self.flag_approach == 2:
+                # Phase 2: sprinting along staircase top to build speed
+                self.hold_right()
+                self.hold_sprint()
+                # Jump at the right edge of the high platform
+                edge_x = (FLAG_STAIR_TOP_COL + 1) * TILE - TILE // 2  # x=6064
+                if on_ground and px >= edge_x:
+                    self.start_jump(14)
+                    self.flag_approach = 3
+                    print(f"  Flag approach: sprint-jump from edge! "
+                          f"y={py:.0f} x={px:.0f}")
+                return
+
+            if self.flag_approach == 3:
+                # Phase 3: in the air / flying toward flagpole
+                self.hold_right()
+                self.hold_sprint()
+                return
 
         # ── Movement: conditional right (allow stopping for items) ──
         if self.slow_for_item > 0:

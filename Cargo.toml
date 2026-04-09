@@ -50,4 +50,4 @@ pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
 rand = "0.9"
 fontdue = "0.9"
-rodio = { version = "0.20", default-features = false, features = ["wav"] }
+rodio = { version = "0.20", default-features = false, features = ["wav", "vorbis"] }

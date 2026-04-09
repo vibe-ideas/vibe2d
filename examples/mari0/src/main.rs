@@ -730,6 +730,11 @@ impl Mari0Game {
             self.player.on_ground = false;
             self.combo_index = 0;
             self.combo_active = false;
+            if self.player.is_big {
+                ctx.audio.play("jumpbig");
+            } else {
+                ctx.audio.play("jump");
+            }
         }
         if !jump_pressed {
             self.player.is_jumping = false;
@@ -779,7 +784,7 @@ impl Mari0Game {
                     let r = head_row as usize;
                     let c = col as usize;
                     let tile = self.level.tiles[r][c];
-                    self.hit_block(r, c, tile);
+                    self.hit_block(ctx, r, c, tile);
                 }
             }
         }
@@ -800,10 +805,12 @@ impl Mari0Game {
         if fire_blue && self.player.portal_cooldown <= 0.0 {
             self.fire_projectile(0);
             self.player.portal_cooldown = PORTAL_GUN_DELAY;
+            ctx.audio.play("shot");
         }
         if fire_orange && self.player.portal_cooldown <= 0.0 {
             self.fire_projectile(1);
             self.player.portal_cooldown = PORTAL_GUN_DELAY;
+            ctx.audio.play("shot");
         }
 
         // ── Fireballs ──
@@ -818,22 +825,23 @@ impl Mari0Game {
                 exploding: false,
                 explode_timer: 0.0,
             });
+            ctx.audio.play("fireball");
         }
 
         // ── Update projectiles ──
-        self.update_projectiles(dt);
+        self.update_projectiles(ctx, dt);
 
         // ── Portal teleport ──
-        self.check_portal_teleport();
+        self.check_portal_teleport(ctx);
 
         // ── Enemies ──
         self.update_enemies(dt, ctx);
 
         // ── Items (mushroom, star, 1-up, flower) ──
-        self.update_items(dt);
+        self.update_items(ctx, dt);
 
         // ── Fireballs ──
-        self.update_fireballs(dt);
+        self.update_fireballs(ctx, dt);
 
         // ── Coins ──
         for coin in &mut self.level.coins {
@@ -844,6 +852,7 @@ impl Mari0Game {
                 coin.collected = true;
                 self.score += COIN_SCORE;
                 self.coins += 1;
+                ctx.audio.play("coin");
             }
         }
 
@@ -852,6 +861,7 @@ impl Mari0Game {
             self.state = GameState::LevelComplete;
             let time_bonus = (self.time_remaining as u32) * 50;
             self.score += time_bonus;
+            ctx.audio.play("levelend");
         }
 
         // ── Camera ──
@@ -961,7 +971,7 @@ impl Mari0Game {
         });
     }
 
-    fn update_projectiles(&mut self, dt: f32) {
+    fn update_projectiles(&mut self, ctx: &Context, dt: f32) {
         for proj in &mut self.projectiles {
             if !proj.active { continue; }
             proj.x += proj.vx * dt;
@@ -998,6 +1008,11 @@ impl Mari0Game {
                     active: true,
                     open_scale: 0.0,
                 });
+                if proj.portal_index == 0 {
+                    ctx.audio.play("portal1open");
+                } else {
+                    ctx.audio.play("portal2open");
+                }
                 proj.active = false;
             } else if is_solid(tile) {
                 // Hit non-portal surface, destroy
@@ -1014,7 +1029,7 @@ impl Mari0Game {
         self.projectiles.retain(|p| p.active);
     }
 
-    fn check_portal_teleport(&mut self) {
+    fn check_portal_teleport(&mut self, ctx: &Context) {
         if self.player.teleport_cooldown > 0.0 { return; }
         let (p0, p1) = match (&self.portals[0], &self.portals[1]) {
             (Some(a), Some(b)) if a.active && b.active => (a.clone(), b.clone()),
@@ -1062,6 +1077,7 @@ impl Mari0Game {
                 self.player.vy = new_vy;
                 self.player.teleport_cooldown = PORTAL_TELEPORT_COOLDOWN;
                 self.player.on_ground = false;
+                ctx.audio.play("portalenter");
                 return;
             }
         }
@@ -1245,6 +1261,7 @@ impl Mari0Game {
                 self.combo_index += 1;
                 self.combo_active = true;
                 player_bounce = true;
+                ctx.audio.play("stomp");
             } else if self.star_timer > 0.0 {
                 // Star invincibility: kill enemy on contact (flip + fly off)
                 enemy.state = EnemyState::Dead;
@@ -1255,14 +1272,17 @@ impl Mari0Game {
                 self.score += combo_score;
                 self.combo_index += 1;
                 self.combo_active = true;
+                ctx.audio.play("stomp");
             } else if self.player.invincible_timer <= 0.0 && enemy.state != EnemyState::Shell {
                 // Hit by enemy from side
                 if self.player.is_fire {
                     self.player.is_fire = false;
                     self.player.invincible_timer = 2.0;
+                    ctx.audio.play("shrink");
                 } else if self.player.is_big {
                     self.player.set_size(false);
                     self.player.invincible_timer = 2.0;
+                    ctx.audio.play("shrink");
                 } else {
                     self.die(ctx);
                     return;
@@ -1285,17 +1305,19 @@ impl Mari0Game {
         });
     }
 
-    fn die(&mut self, _ctx: &mut Context) {
+    fn die(&mut self, ctx: &mut Context) {
         if self.lives > 1 {
             self.lives -= 1;
             self.state = GameState::Dead;
+            ctx.audio.play("death");
         } else {
             self.lives = 0;
             self.state = GameState::Dead;
+            ctx.audio.play("gameover");
         }
     }
 
-    fn hit_block(&mut self, row: usize, col: usize, tile: u32) {
+    fn hit_block(&mut self, ctx: &Context, row: usize, col: usize, tile: u32) {
         let key = (row, col);
         let bx = col as f32 * TILE_SIZE;
         let by = row as f32 * TILE_SIZE;
@@ -1323,6 +1345,7 @@ impl Mari0Game {
                             x: bx, y: by - TILE_SIZE,
                             value: COIN_SCORE, timer: 0.0,
                         });
+                        ctx.audio.play("coin");
                     }
                     BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp | BlockContent::FireFlower => {
                         self.level.tiles[row][col] = SMB_QUESTION_USED;
@@ -1342,6 +1365,7 @@ impl Mari0Game {
                             emerge_timer: 0.0,
                             anim_timer: 0.0,
                         });
+                        ctx.audio.play("mushroomappear");
                     }
                     BlockContent::MultiCoin(remaining) => {
                         // Start timer on first hit
@@ -1369,9 +1393,11 @@ impl Mari0Game {
                             x: bx, y: by - TILE_SIZE,
                             value: COIN_SCORE, timer: 0.0,
                         });
+                        ctx.audio.play("coin");
                     }
                 }
                 self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                ctx.audio.play("blockhit");
             }
             SMB_BRICK => {
                 if let Some(content) = self.level.block_contents.get(&key).copied() {
@@ -1399,6 +1425,7 @@ impl Mari0Game {
                                 x: bx, y: by - TILE_SIZE,
                                 value: COIN_SCORE, timer: 0.0,
                             });
+                            ctx.audio.play("coin");
                         }
                         BlockContent::Coin => {
                             self.level.tiles[row][col] = SMB_QUESTION_USED;
@@ -1414,6 +1441,7 @@ impl Mari0Game {
                                 x: bx, y: by - TILE_SIZE,
                                 value: COIN_SCORE, timer: 0.0,
                             });
+                            ctx.audio.play("coin");
                         }
                         BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp | BlockContent::FireFlower => {
                             self.level.tiles[row][col] = SMB_QUESTION_USED;
@@ -1433,9 +1461,11 @@ impl Mari0Game {
                                 emerge_timer: 0.0,
                                 anim_timer: 0.0,
                             });
+                            ctx.audio.play("mushroomappear");
                         }
                     }
                     self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                    ctx.audio.play("blockhit");
                 } else if self.player.is_big {
                     // Big Mario breaks empty brick
                     self.level.tiles[row][col] = SMB_EMPTY;
@@ -1452,9 +1482,11 @@ impl Mari0Game {
                             x: cx, y: cy, vx: dvx, vy: dvy, timer: 0.0,
                         });
                     }
+                    ctx.audio.play("blockbreak");
                 } else {
                     // Small Mario just bounces the brick
                     self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                    ctx.audio.play("blockhit");
                 }
             }
             SMB_HIDDEN_BLOCK => {
@@ -1478,6 +1510,7 @@ impl Mari0Game {
                                 emerge_timer: 0.0,
                                 anim_timer: 0.0,
                             });
+                            ctx.audio.play("mushroomappear");
                         }
                         _ => {
                             self.score += COIN_SCORE;
@@ -1490,16 +1523,18 @@ impl Mari0Game {
                                 x: bx, y: by - TILE_SIZE,
                                 value: COIN_SCORE, timer: 0.0,
                             });
+                            ctx.audio.play("coin");
                         }
                     }
                     self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                    ctx.audio.play("blockhit");
                 }
             }
             _ => {}
         }
     }
 
-    fn update_items(&mut self, dt: f32) {
+    fn update_items(&mut self, ctx: &Context, dt: f32) {
         // Update item physics
         let level = &self.level;
         for item in &mut self.items {
@@ -1604,6 +1639,7 @@ impl Mari0Game {
                             x: item.x, y: item.y - TILE_SIZE,
                             value: ITEM_SCORE, timer: 0.0,
                         });
+                        ctx.audio.play("mushroomeat");
                     }
                     ItemType::Star => {
                         self.star_timer = STAR_DURATION;
@@ -1612,9 +1648,11 @@ impl Mari0Game {
                             x: item.x, y: item.y - TILE_SIZE,
                             value: ITEM_SCORE, timer: 0.0,
                         });
+                        ctx.audio.play("mushroomeat");
                     }
                     ItemType::OneUp => {
                         self.lives += 1;
+                        ctx.audio.play("oneup");
                     }
                     ItemType::FireFlower => {
                         if !self.player.is_big {
@@ -1626,6 +1664,7 @@ impl Mari0Game {
                             x: item.x, y: item.y - TILE_SIZE,
                             value: ITEM_SCORE, timer: 0.0,
                         });
+                        ctx.audio.play("mushroomeat");
                     }
                 }
             } else {
@@ -1638,7 +1677,7 @@ impl Mari0Game {
         self.items.retain(|item| item.y < map_bottom);
     }
 
-    fn update_fireballs(&mut self, dt: f32) {
+    fn update_fireballs(&mut self, _ctx: &Context, dt: f32) {
         // Physics update
         let level = &self.level;
         for fb in &mut self.fireballs {
