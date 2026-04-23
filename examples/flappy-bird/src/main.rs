@@ -302,9 +302,82 @@ impl Game for FlappyBirdGame {
                 }
             }
         }
+
     }
 
-    fn draw(&mut self, ctx: &Context, screen: &mut Screen) {
+    fn update_ui(&mut self, ctx: &mut Context, input: &InputState) {
+        let white_tex = ctx.assets
+            .texture_id("__vibe_ui_white")
+            .unwrap_or(TextureId(0));
+        let vw = self.vw;
+        let vh = self.vh;
+        let score = self.score;
+        let best_score = self.best_score;
+        let countdown_timer = self.countdown_timer;
+
+        // Take ui_state out so we can borrow ctx.assets independently
+        let mut ui_state = std::mem::take(&mut ctx.ui_state);
+
+        let mut ui = UiContext::new(
+            &mut ui_state,
+            input,
+            white_tex,
+            vw,
+            vh,
+        );
+        ui.set_anchor(Anchor::TopCenter);
+
+        match self.state {
+            GameState::Idle => {
+                if let Some(font) = ctx.assets.font("score") {
+                    ui.set_cursor(0.0, 40.0);
+                    ui.label(font, "Flappy Bird");
+                }
+                if let Some(font) = ctx.assets.font("ui") {
+                    ui.set_cursor(0.0, vh / 2.0 + 30.0);
+                    ui.label(font, "Press SPACE to start");
+                    if best_score > 0 {
+                        let best = format!("Best: {}", best_score);
+                        ui.label(font, &best);
+                    }
+                }
+            }
+            GameState::Countdown => {
+                if let Some(font) = ctx.assets.font("score") {
+                    let count = countdown_timer.ceil() as u32;
+                    ui.set_cursor(0.0, vh / 3.0);
+                    ui.label(font, &count.to_string());
+                }
+            }
+            GameState::Playing => {
+                if let Some(font) = ctx.assets.font("score") {
+                    ui.set_cursor(0.0, 10.0);
+                    ui.label(font, &score.to_string());
+                }
+            }
+            GameState::Dead => {
+                if let Some(font) = ctx.assets.font("score") {
+                    ui.set_cursor(0.0, 50.0);
+                    ui.label(font, "Game Over");
+                    let text = format!("Score: {}", score);
+                    ui.label(font, &text);
+                }
+                if let Some(font) = ctx.assets.font("ui") {
+                    if best_score > 0 {
+                        let best = format!("Best: {}", best_score);
+                        ui.label(font, &best);
+                    }
+                    ui.set_cursor(0.0, vh / 2.0 + 40.0);
+                    ui.label(font, "Press SPACE to retry");
+                }
+            }
+        }
+
+        ui.finish();
+        ctx.ui_state = ui_state;
+    }
+
+    fn draw(&self, _ctx: &Context, screen: &mut Screen) {
         let ground_top = self.ground_top();
 
         // Background layers (back to front)
@@ -342,51 +415,6 @@ impl Game for FlappyBirdGame {
             self.bird_h,
         );
 
-        // ── UI overlay ──
-        let score_font = ctx.assets.font("score");
-        let ui_font = ctx.assets.font("ui");
-
-        match self.state {
-            GameState::Idle => {
-                if let Some(font) = score_font {
-                    screen.draw_text_centered(font, "Flappy Bird", 40.0);
-                }
-                if let Some(font) = ui_font {
-                    screen.draw_text_centered(font, "Press SPACE to start", self.vh / 2.0 + 30.0);
-                    if self.best_score > 0 {
-                        let best = format!("Best: {}", self.best_score);
-                        screen.draw_text_centered(font, &best, self.vh / 2.0 + 55.0);
-                    }
-                }
-            }
-            GameState::Countdown => {
-                if let Some(font) = score_font {
-                    let count = self.countdown_timer.ceil() as u32;
-                    let text = count.to_string();
-                    screen.draw_text_centered(font, &text, self.vh / 3.0);
-                }
-            }
-            GameState::Playing => {
-                if let Some(font) = score_font {
-                    let text = self.score.to_string();
-                    screen.draw_text_centered(font, &text, 10.0);
-                }
-            }
-            GameState::Dead => {
-                if let Some(font) = score_font {
-                    screen.draw_text_centered(font, "Game Over", 50.0);
-                    let text = format!("Score: {}", self.score);
-                    screen.draw_text_centered(font, &text, 90.0);
-                }
-                if let Some(font) = ui_font {
-                    if self.best_score > 0 {
-                        let best = format!("Best: {}", self.best_score);
-                        screen.draw_text_centered(font, &best, 130.0);
-                    }
-                    screen.draw_text_centered(font, "Press SPACE to retry", self.vh / 2.0 + 40.0);
-                }
-            }
-        }
     }
 
     fn clear_color(&self) -> Color {

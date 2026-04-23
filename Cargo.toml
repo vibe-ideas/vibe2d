@@ -9,10 +9,12 @@ members = [
     "crates/vibe_asset",
     "crates/vibe_debug",
     "crates/vibe_platform",
+    "crates/vibe_ui",
     "tools/vibe-cli",
     "examples/flappy-bird",
     "examples/tetris",
     "examples/mari0",
+    "examples/ui",
 ]
 
 [workspace.package]
@@ -30,6 +32,7 @@ vibe_input = { path = "crates/vibe_input" }
 vibe_asset = { path = "crates/vibe_asset" }
 vibe_debug = { path = "crates/vibe_debug" }
 vibe_platform = { path = "crates/vibe_platform" }
+vibe_ui = { path = "crates/vibe_ui" }
 
 # External dependencies
 wgpu = "24"

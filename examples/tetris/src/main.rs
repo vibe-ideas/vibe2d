@@ -890,7 +890,7 @@ impl Game for TetrisGame {
         }
     }
 
-    fn draw(&mut self, ctx: &Context, screen: &mut Screen) {
+    fn draw(&self, ctx: &Context, screen: &mut Screen) {
         // ── Background (includes grid lines, hold/next boxes) ──
         screen.draw_sprite(self.bg_tex, 0.0, 0.0, 800.0, 700.0);
 

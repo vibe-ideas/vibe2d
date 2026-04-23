@@ -1,0 +1,12 @@
+[package]
+name = "vibe_ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Immediate-mode UI system for Vibe2D"
+
+[dependencies]
+vibe_render = { workspace = true }
+vibe_input = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -12,6 +12,10 @@ pub mod prelude {
     pub use glam::Vec2;
     pub use vibe_input::InputState;
     pub use vibe_render::TextureId;
+    pub use vibe_ui::{
+        Anchor, ButtonStyle, LayoutDirection, PanelStyle, ScrollListStyle, Style,
+        TextInputStyle, UiColor, UiContext, UiOutput,
+    };
 }
 
 pub use config::GameConfig;
@@ -127,6 +131,8 @@ pub fn run<G: Game + 'static>(config_path: &str) {
         game: None,
         assets: vibe_asset::AssetManager::new(),
         audio: vibe_audio::AudioEngine::new(),
+        ui_state: vibe_ui::UiState::new(),
+        white_texture_id: None,
         config,
         base_path: std::path::PathBuf::from(
             std::path::Path::new(config_path)
@@ -173,6 +179,8 @@ struct GameBridge<G: Game> {
     game: Option<G>,
     assets: vibe_asset::AssetManager,
     audio: vibe_audio::AudioEngine,
+    ui_state: vibe_ui::UiState,
+    white_texture_id: Option<vibe_render::TextureId>,
     config: GameConfig,
     base_path: PathBuf,
     virtual_width: f32,
@@ -226,9 +234,14 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
             }
         }
 
+        // Create the built-in 1×1 white pixel texture for UI rendering
+        let white_tex = renderer.create_white_pixel_texture();
+        self.white_texture_id = Some(self.assets.register_texture("__vibe_ui_white", white_tex));
+
         let mut ctx = Context {
             assets: std::mem::take(&mut self.assets),
             audio: std::mem::take(&mut self.audio),
+            ui_state: std::mem::take(&mut self.ui_state),
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
         };
@@ -237,6 +250,7 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
 
         self.assets = ctx.assets;
         self.audio = ctx.audio;
+        self.ui_state = ctx.ui_state;
     }
 
     fn on_input_event(&mut self, _input: &mut vibe_input::InputState) {}
@@ -285,12 +299,14 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
                         let mut ctx = Context {
                             assets: std::mem::take(&mut self.assets),
                             audio: std::mem::take(&mut self.audio),
+                            ui_state: std::mem::take(&mut self.ui_state),
                             virtual_width: self.virtual_width,
                             virtual_height: self.virtual_height,
                         };
                         game.update(&mut ctx, dt_step, input);
                         self.assets = ctx.assets;
                         self.audio = ctx.audio;
+                        self.ui_state = ctx.ui_state;
                     }
                     self.frame_count += 1;
                     self.elapsed_time += dt_step;
@@ -359,16 +375,21 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
         let (will_update, effective_dt) = (true, dt);
 
         if will_update {
+            self.ui_state.update_time(effective_dt as f64);
+
             if let Some(game) = &mut self.game {
                 let mut ctx = Context {
                     assets: std::mem::take(&mut self.assets),
                     audio: std::mem::take(&mut self.audio),
+                    ui_state: std::mem::take(&mut self.ui_state),
                     virtual_width: self.virtual_width,
                     virtual_height: self.virtual_height,
                 };
                 game.update(&mut ctx, effective_dt, input);
+                game.update_ui(&mut ctx, input);
                 self.assets = ctx.assets;
                 self.audio = ctx.audio;
+                self.ui_state = ctx.ui_state;
             }
 
             #[cfg(feature = "vdp")]
@@ -384,17 +405,25 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
             renderer.request_screenshot(path);
         }
 
-        if let Some(game) = &mut self.game {
+        if let Some(game) = &self.game {
             let ctx = Context {
                 assets: std::mem::take(&mut self.assets),
                 audio: std::mem::take(&mut self.audio),
+                ui_state: std::mem::take(&mut self.ui_state),
                 virtual_width: self.virtual_width,
                 virtual_height: self.virtual_height,
             };
             let mut screen = Screen::new(renderer, self.virtual_width, self.virtual_height);
             game.draw(&ctx, &mut screen);
+
+            // Replay cached UI draw commands on top of game rendering
+            for cmd in &ctx.ui_state.cached_draw_commands {
+                renderer.draw_sprite(*cmd);
+            }
+
             self.assets = ctx.assets;
             self.audio = ctx.audio;
+            self.ui_state = ctx.ui_state;
         }
     }
 
@@ -585,6 +614,154 @@ impl<G: Game> GameBridge<G> {
                 vibe_debug::VdpResponse::success(
                     req.id.clone(),
                     serde_json::json!({ "path": path, "status": "queued" }),
+                )
+            }
+
+            // ── UI methods ──
+            "ui.listWidgets" => {
+                let widgets = &self.ui_state.last_frame_widgets;
+                let json_widgets: Vec<serde_json::Value> = widgets
+                    .iter()
+                    .map(|w| serde_json::to_value(w).unwrap_or(serde_json::Value::Null))
+                    .collect();
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "widgets": json_widgets }),
+                )
+            }
+
+            "ui.click" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::Click {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "click", "id": widget_id }),
+                )
+            }
+
+            "ui.setText" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                let text = match req.params.get("text").and_then(|v| v.as_str()) {
+                    Some(t) => t.to_string(),
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'text' parameter",
+                    ),
+                };
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::SetText {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                    text: text.clone(),
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "setText", "id": widget_id, "text": text }),
+                )
+            }
+
+            "ui.submit" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::Submit {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "submit", "id": widget_id }),
+                )
+            }
+
+            "ui.setFocus" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::SetFocus {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "setFocus", "id": widget_id }),
+                )
+            }
+
+            "ui.clearFocus" => {
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::ClearFocus);
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "clearFocus" }),
+                )
+            }
+
+            "ui.scroll" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                let offset = req.params.get("offset")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::Scroll {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                    offset,
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "scroll", "id": widget_id, "offset": offset }),
+                )
+            }
+
+            "ui.scrollHorizontal" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                let offset = req.params.get("offset")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as f32;
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::ScrollHorizontal {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                    offset,
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "scrollHorizontal", "id": widget_id, "offset": offset }),
+                )
+            }
+
+            "ui.scrollToBottom" => {
+                let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
+                    Some(id) => id,
+                    None => return vibe_debug::VdpResponse::error(
+                        req.id.clone(), -32602, "Missing 'id' parameter",
+                    ),
+                };
+                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::ScrollToBottom {
+                    id: vibe_ui::WidgetId::new(widget_id),
+                });
+                vibe_debug::VdpResponse::success(
+                    req.id.clone(),
+                    serde_json::json!({ "queued": true, "action": "scrollToBottom", "id": widget_id }),
                 )
             }
 

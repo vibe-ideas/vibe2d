@@ -1,0 +1,29 @@
+meta:
+  name: "UI Demo"
+  version: "0.1.0"
+
+window:
+  width: 1024
+  height: 640
+  title: "UI Demo - Vibe2D"
+  vsync: true
+
+virtual_resolution:
+  width: 512
+  height: 320
+
+assets:
+  fonts:
+    title: "assets/fonts/ui.ttf:20"
+    body: "assets/fonts/ui.ttf:14"
+    small: "assets/fonts/ui.ttf:10"
+
+input:
+  actions:
+    confirm:
+      keys: ["Enter"]
+
+debug:
+  vdp:
+    enabled: true
+    port: 9229

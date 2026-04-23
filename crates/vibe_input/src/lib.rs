@@ -25,6 +25,13 @@ pub struct InputState {
     mouse_just_pressed: HashMap<MouseButton, bool>,
     mouse_just_released: HashMap<MouseButton, bool>,
     mouse_actions: HashMap<String, Vec<MouseButton>>,
+
+    // ── Character input (for UI text input) ──
+    chars_received: Vec<char>,
+
+    // ── Mouse scroll ──
+    scroll_delta: f32,
+    scroll_delta_x: f32,
 }
 
 /// Input action mapping from game.yaml
@@ -49,6 +56,9 @@ impl InputState {
             mouse_just_pressed: HashMap::new(),
             mouse_just_released: HashMap::new(),
             mouse_actions: HashMap::new(),
+            chars_received: Vec::new(),
+            scroll_delta: 0.0,
+            scroll_delta_x: 0.0,
         }
     }
 
@@ -81,6 +91,9 @@ impl InputState {
         self.just_released.clear();
         self.mouse_just_pressed.clear();
         self.mouse_just_released.clear();
+        self.chars_received.clear();
+        self.scroll_delta = 0.0;
+        self.scroll_delta_x = 0.0;
     }
 
     // ── Keyboard events ──
@@ -151,6 +164,36 @@ impl InputState {
         let mouse_match = self.mouse_actions.get(action)
             .is_some_and(|btns| btns.iter().any(|b| self.is_mouse_button_just_pressed(*b)));
         key_match || mouse_match
+    }
+
+    // ── Character input ──
+
+    /// Characters received this frame (for text input widgets).
+    pub fn chars_this_frame(&self) -> &[char] {
+        &self.chars_received
+    }
+
+    /// Called by the platform layer when a printable character is received.
+    pub fn on_char_received(&mut self, ch: char) {
+        self.chars_received.push(ch);
+    }
+
+    // ── Mouse scroll ──
+
+    /// Vertical mouse scroll wheel delta this frame (positive = scroll up).
+    pub fn mouse_scroll_delta(&self) -> f32 {
+        self.scroll_delta
+    }
+
+    /// Horizontal mouse scroll wheel delta this frame (positive = scroll right).
+    pub fn mouse_scroll_delta_x(&self) -> f32 {
+        self.scroll_delta_x
+    }
+
+    /// Called by the platform layer when a scroll event is received.
+    pub fn on_mouse_scroll(&mut self, delta_x: f32, delta_y: f32) {
+        self.scroll_delta += delta_y;
+        self.scroll_delta_x += delta_x;
     }
 
     /// Check if an action is currently held down.

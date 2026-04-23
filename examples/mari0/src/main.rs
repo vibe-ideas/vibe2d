@@ -1875,7 +1875,7 @@ impl Game for Mari0Game {
         }
     }
 
-    fn draw(&mut self, ctx: &Context, screen: &mut Screen) {
+    fn draw(&self, ctx: &Context, screen: &mut Screen) {
         let cam_x = self.camera.x;
 
         // Portal tint colors (convert sRGB → linear for GPU)

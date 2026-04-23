@@ -14,7 +14,16 @@ pub trait Game {
     fn update(&mut self, ctx: &mut Context, dt: f32, input: &InputState);
 
     /// Called every frame after update. Draw everything to screen.
-    fn draw(&mut self, ctx: &Context, screen: &mut Screen);
+    fn draw(&self, ctx: &Context, screen: &mut Screen);
+
+    /// Build UI for this frame using the immediate-mode UI system.
+    ///
+    /// Called after `update()` during the update phase (before rendering).
+    /// UI draw commands are cached and automatically replayed during rendering,
+    /// drawn on top of everything from `draw()`.
+    ///
+    /// Override this to add UI elements. Default implementation does nothing.
+    fn update_ui(&mut self, _ctx: &mut Context, _input: &InputState) {}
 
     /// Background clear color. Override to customize.
     fn clear_color(&self) -> Color {

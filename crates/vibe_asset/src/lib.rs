@@ -4,6 +4,7 @@ use std::path::Path;
 use anyhow::Result;
 use vibe_render::{Font, Renderer, Texture, TextureId};
 
+
 /// Manages loaded game assets (textures, fonts, audio).
 pub struct AssetManager {
     textures: Vec<Texture>,
@@ -114,5 +115,14 @@ impl AssetManager {
     /// Get a font by name.
     pub fn font(&self, name: &str) -> Option<&Font> {
         self.fonts.get(name)
+    }
+
+    /// Register a runtime-created texture with the given name.
+    /// Returns the assigned TextureId.
+    pub fn register_texture(&mut self, name: &str, texture: Texture) -> TextureId {
+        let id = TextureId(self.textures.len());
+        self.textures.push(texture);
+        self.texture_names.insert(name.to_string(), id);
+        id
     }
 }

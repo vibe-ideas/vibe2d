@@ -153,6 +153,16 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                             self.input.on_key_released(keycode);
                         }
                     }
+                    // Forward printable characters for UI text input
+                    if event.state.is_pressed() {
+                        if let Some(ref text) = event.text {
+                            for ch in text.chars() {
+                                if !ch.is_control() {
+                                    self.input.on_char_received(ch);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -182,6 +192,15 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                             self.input.on_mouse_button_released(mb);
                         }
                     }
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                if !self.callbacks.should_suppress_input() {
+                    let (scroll_x, scroll_y) = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                    };
+                    self.input.on_mouse_scroll(scroll_x, scroll_y);
                 }
             }
             WindowEvent::RedrawRequested => {

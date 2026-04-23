@@ -14,6 +14,7 @@ vibe_render = { workspace = true }
 vibe_input = { workspace = true }
 vibe_audio = { workspace = true }
 vibe_asset = { workspace = true }
+vibe_ui = { workspace = true }
 vibe_debug = { workspace = true, optional = true }
 vibe_platform = { workspace = true }
 glam.workspace = true
