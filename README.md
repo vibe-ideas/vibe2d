@@ -1,25 +1,29 @@
 # Vibe2D
 
-An AI-friendly 2D game engine built in Rust. Designed for simplicity — write game logic in pure Rust with an Ebiten/Love2D-style `Game` trait, configure via YAML, and let AI agents inspect and control the running game via the **Vibe Debug Protocol (VDP)**.
+一个对 AI 友好的 2D 游戏引擎，使用 Rust 构建。
 
-## Features
+用纯 Rust 编写游戏逻辑，采用 Ebiten/Love2D 风格的 `Game` trait，通过 YAML 声明式配置，并通过 **Vibe Debug Protocol (VDP)** 让 AI Agent 在运行时检查和控制游戏。
 
-- **Simple Game API** — Implement `new()`, `update()`, `draw()` and you have a game. No ECS, no boilerplate.
-- **YAML Configuration** — Window size, virtual resolution, assets, input mappings, debug settings — all in `game.yaml`.
-- **Sprite Batch Rendering** — wgpu-powered GPU renderer with automatic texture batching, orthographic projection, and virtual resolution scaling.
-- **Text Rendering** — TTF font loading via `fontdue`, glyph atlas rasterization, `draw_text()` / `draw_text_centered()`.
-- **Input System** — Action-based input mapping (e.g., `jump: ["Space"]`) with keyboard and mouse pressed/held/released state tracking. Mouse coordinates use virtual resolution.
-- **Vibe Debug Protocol (VDP)** — WebSocket + JSON-RPC 2.0 server for real-time game inspection, state mutation, input simulation (keyboard/mouse), pause/step debugging, and screenshots from external tools or AI agents. Compile-time strippable via `--no-default-features`.
-- **CLI Tool** — `vibe inspect`, `vibe rpc`, `vibe screenshot` for interacting with the running game from the terminal.
-- **Pure CLI Workflow** — No GUI editor. Code, configure, run, debug — all from the command line.
+## 特性
 
-## Screenshot
+- **极简游戏 API** — 实现 `new()`、`update()`、`draw()` 三个方法就是一个完整的游戏。无需 ECS，无需模板代码。
+- **YAML 声明式配置** — 窗口大小、虚拟分辨率、资源、输入映射、调试设置，全部在 `game.yaml` 中声明。
+- **Sprite Batch 渲染** — 基于 wgpu 的 GPU 渲染器，自动纹理批处理、正交投影、虚拟分辨率缩放。
+- **文本渲染** — 通过 fontdue 加载 TTF 字体，字形 atlas 光栅化，`draw_text()` / `draw_text_centered()`。
+- **输入系统** — 基于 Action 的输入映射（如 `jump: ["Space"]`），支持键盘和鼠标的 pressed/held/released 状态追踪。鼠标坐标自动转换为虚拟分辨率。
+- **即时模式 UI** — 内建 UI 系统，支持 Label、Button、Panel、TextInput、ScrollList，锚点布局，通过 VDP 可完全自动化操控。
+- **音频引擎** — 基于 rodio 的音效播放，WAV 格式，即发即忘模式。
+- **Vibe Debug Protocol (VDP)** — WebSocket + JSON-RPC 2.0 服务，支持运行时状态检查、状态修改、输入模拟（键盘/鼠标）、暂停/步进调试、截图。可通过 `--no-default-features` 在编译时完全剥离。
+- **CLI 工具** — `vibe inspect`、`vibe rpc`、`vibe screenshot`，从终端与运行中的游戏交互。
+- **纯 CLI 工作流** — 无 GUI 编辑器。代码、配置、运行、调试，全在命令行完成。
 
-Flappy Bird example running on Vibe2D:
+## 截图
+
+Flappy Bird 示例运行在 Vibe2D 上：
 
 ![Flappy Bird on Vibe2D](screenshot.png)
 
-## Quick Start
+## 快速开始
 
 ```rust
 use vibe2d::prelude::*;
@@ -33,7 +37,7 @@ impl Game for MyGame {
 
     fn update(&mut self, _ctx: &mut Context, _dt: f32, _input: &InputState) {}
 
-    fn draw(&mut self, _ctx: &Context, _screen: &mut Screen) {}
+    fn draw(&self, _ctx: &Context, _screen: &mut Screen) {}
 }
 
 fn main() {
@@ -41,29 +45,38 @@ fn main() {
 }
 ```
 
-## Project Structure
+## 项目结构
 
 ```
 crates/
-  vibe2d/         — Main engine crate (Game trait, Context, Screen, config)
-  vibe_render/    — wgpu sprite batch renderer, font atlas
-  vibe_platform/  — Platform abstraction (winit + wgpu desktop)
-  vibe_input/     — Input state tracking with action mapping
-  vibe_asset/     — Asset manager (textures, fonts)
-  vibe_debug/     — VDP WebSocket server + JSON-RPC protocol
-  vibe_physics/   — Physics (placeholder)
-  vibe_audio/     — Audio (placeholder)
+  vibe2d/         — 主引擎 crate（Game trait、Context、Screen、配置）
+  vibe_render/    — wgpu sprite batch 渲染器、字体 atlas
+  vibe_platform/  — 平台抽象（winit + wgpu 桌面端）
+  vibe_input/     — 输入状态追踪 + action 映射
+  vibe_asset/     — 资源管理器（纹理、字体）
+  vibe_audio/     — 音频引擎（rodio，WAV 播放）
+  vibe_debug/     — VDP WebSocket 服务 + JSON-RPC 协议
+  vibe_ui/        — 即时模式 UI 系统
+  vibe_physics/   — 物理引擎（占位）
 tools/
-  vibe-cli/       — CLI tool (vibe new/inspect/rpc/screenshot)
+  vibe-cli/       — CLI 工具（vibe new/inspect/rpc/screenshot）
 examples/
-  flappy-bird/    — Complete Flappy Bird game
+  flappy-bird/    — 完整的 Flappy Bird 游戏
+  tetris/         — 俄罗斯方块
+  mari0/          — 马里奥风格游戏
+  ui/             — UI 系统演示
+docs/
+  architecture.md — 详细架构文档
+  api.md          — API 参考
+  vdp.md          — VDP 协议规范
+  ui.md           — UI 系统设计文档
 skills/
-  vdp.md          — LLM skill file for VDP protocol
+  vdp.md          — LLM skill 文件
 ```
 
-## VDP (Vibe Debug Protocol)
+## VDP（Vibe Debug Protocol）
 
-Enable VDP in `game.yaml`:
+在 `game.yaml` 中启用 VDP：
 
 ```yaml
 debug:
@@ -72,38 +85,46 @@ debug:
     port: 9229
 ```
 
-Then interact with the running game:
+然后与运行中的游戏交互：
 
 ```bash
-# Inspect game state
+# 查看游戏状态
 vibe inspect
 
-# Take a screenshot
+# 截图
 vibe screenshot -o capture.png
 
-# Pause / step / resume
+# 暂停 / 步进 / 恢复
 vibe rpc engine.pause
 vibe rpc engine.step '{"frames": 1}'
 vibe rpc engine.resume
 
-# Simulate keyboard input
-vibe rpc engine.simulateInput '{"device": "keyboard", "action": "tap", "key": "Space"}'
+# 模拟键盘输入
+vibe rpc engine.simulateInput '{"action": "tap", "key": "Space"}'
 
-# Simulate mouse input
+# 模拟鼠标输入
 vibe rpc engine.simulateInput '{"device": "mouse", "action": "move", "x": 256, "y": 144}'
 
-# Send custom RPC
+# 发送自定义 RPC
 vibe rpc game.setState '{"state": "Playing"}'
 ```
 
 ### Feature Flags
 
-VDP is enabled by default. To build without VDP (for release):
+VDP 默认启用。发布构建时可剥离 VDP：
 
 ```bash
-cargo build --no-default-features
+cargo build --no-default-features --release
 ```
+
+## 文档
+
+- [架构文档](docs/architecture.md) — 引擎内部设计和关键决策
+- [API 参考](docs/api.md) — Game trait、Screen、InputState、game.yaml 配置、VDP 方法
+- [VDP 协议规范](docs/vdp.md) — 完整的 WebSocket + JSON-RPC 协议细节
+- [UI 系统设计](docs/ui.md) — 即时模式 UI 的架构和组件
+- [AI Agent 指南](AGENTS.md) — 面向大模型的项目开发指南
 
 ## License
 
-MIT OR Apache-2.0
+MIT
