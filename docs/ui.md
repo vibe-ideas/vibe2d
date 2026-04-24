@@ -1378,6 +1378,144 @@ button_txt(tex: font)  ─┘
 | **Phase 7** | ScrollList（滚动 + CPU 裁剪 + 滚动条） | ✅ 完成 |
 | **Phase 8** | VDP 集成（WidgetSnapshot + ui.* 方法 + VdpUiAction 队列） | ✅ 完成 |
 | **Phase 9** | 缓存 Draw Commands + update/draw 分离 + update_ui() | ✅ 完成 |
+| **Phase 10** | IME 输入法支持 + 字体 lazy 加载（CJK） | ✅ 完成 |
+
+---
+
+## Phase 10: IME 输入法 + CJK 字体
+
+### 背景
+
+原始 `TextInput` 只通过 `WindowEvent::KeyboardInput::text` 收集字符，而该字段对中日韩输入法（IME）返回的是被吞掉的 ASCII 占位（多数情况下根本不触发），导致中文/日文/韩文/Emoji 全部无法输入。同时 `vibe_render::Font` 在加载时一次性预烘焙 ASCII 字符集，连显示中文都办不到。
+
+Phase 10 解决这两个互相依赖的问题。
+
+### 跨平台 IME 接入（vibe_input + vibe_platform）
+
+`InputState` 新增两个字段：
+
+```rust
+pub struct InputState {
+    // ... 既有字段 ...
+    ime_commit: String,                 // 本帧 IME 提交的整段文本
+    ime_preedit: Option<ImePreedit>,    // 进行中的合成（不写入 buffer）
+}
+
+pub struct ImePreedit {
+    pub text: String,
+    pub cursor_byte: Option<usize>,
+}
+```
+
+关键约定：
+- `ime_commit` 在 `begin_frame()` 中清空（与 `chars_received` 同语义：每帧消费一次）。
+- `ime_preedit` **不**在 `begin_frame()` 中清空 —— 它是 IME 的多帧合成状态，由平台层在 `Ime::Disabled` 或显式 `clear_ime_preedit()` 时清除。
+- IME 合成期间 `ime_preedit` 非空，平台层会**抑制**普通的 `chars_received`，避免把 ASCII 拼音回显进 buffer 又再被 commit 一次。
+
+`vibe_platform::desktop` 中：
+
+```rust
+window.set_ime_allowed(true); // 关键开关，否则 winit 不会发 Ime 事件
+
+WindowEvent::Ime(ime) => match ime {
+    Ime::Enabled | Ime::Disabled => input.clear_ime_preedit(),
+    Ime::Preedit(text, cursor_range) => {
+        let cursor_byte = cursor_range.map(|(start, _end)| start);
+        input.on_ime_preedit(text, cursor_byte);
+    }
+    Ime::Commit(text) => input.on_ime_commit(&text),
+}
+```
+
+winit 的 `Ime` 事件在 macOS / Windows / Linux（X11、Wayland）上由各自的原生 IME 框架转发，对游戏代码完全透明。
+
+### TextInput 的 IME 处理
+
+`text_input_impl` 中的关键改动：
+
+1. **在 IME 合成期间不消费 `chars_this_frame`**，避免重复输入。
+2. **将 `ime_commit` 整段 `insert_str` 到光标位置**，而不是逐字符 push —— 中文一次提交往往是多字节的一个或多个汉字。
+3. **渲染 preedit 浮层**：在光标右侧叠加显示合成文本，加底部下划线（贴合各 OS 原生 IME 视觉约定），且在 preedit 活跃时关闭光标闪烁。
+
+### Font lazy 加载（vibe_render）
+
+`Font` 重写为 lazy 字形 atlas：
+
+```rust
+pub struct Font {
+    font: fontdue::Font,                  // 拥有的运行时 rasterizer
+    pub atlas_texture_id: TextureId,
+    glyphs: HashMap<char, GlyphInfo>,
+    atlas_size: u32,                      // 256 → 512 → 1024 → 2048 → 4096（按需翻倍）
+    atlas_data: Vec<u8>,
+    packer: ShelfPacker,
+    dirty: bool,
+    pub size: f32,
+    pub line_height: f32,
+}
+```
+
+加载时 atlas 完全为空，所有字形按需生成。新增 `prepare_text(device, queue, layout, atlas_texture, text) -> PrepareOutcome`：
+
+```rust
+pub enum PrepareOutcome {
+    NoChange,                  // 全部已缓存
+    AtlasUpdated,              // 在原 GPU 纹理上 write_texture 上传新像素
+    AtlasResized(Texture),     // atlas 翻倍，调用方需替换 textures[atlas_id]
+}
+```
+
+满了之后翻倍 atlas 大小并**重新 rasterize 所有已缓存字形**（fontdue 的栅格化是确定性的，重 raster 比 memcpy 简单）。`MAX_ATLAS_SIZE = 4096`，单字号下能容纳约 16k 个 CJK 字形。
+
+`text_width` / `layout_text` 对未 prepare 的字符以"半字号宽度"作为兜底 advance，使光标位置和测量结果保持一致 —— 这是简化版的 tofu，不绘制空白方框（绘制需要在 Font 内部反向引用 white_pixel 纹理，复杂度不值）。
+
+### Renderer / AssetManager 边界
+
+GPU 资源的所有权严格属于 `Renderer`。`vibe_render` 把 `device` / `queue` / `texture_bind_group_layout` 包在 `Arc` 里自持，并对外暴露三个高层 API：
+
+| Renderer 方法 | 用途 |
+|--------------|------|
+| `load_texture(label, bytes) -> Texture` | 解码 PNG/JPG 并上传成 GPU 纹理 |
+| `load_font(bytes, size, atlas_id) -> (Font, Texture)` | 创建 lazy atlas 并预热 ASCII |
+| `prepare_text(font, atlas_slot, text)` | 把 `text` 中所有未栅格化的字符上传到 atlas，atlas 满了就翻倍并写回 `atlas_slot` |
+
+`vibe_asset::AssetManager` **不依赖 wgpu**，只持有已上传的 `Texture` / `Font` 句柄和"名称→ID"索引。`AssetManager::load_textures` / `load_fonts` / `prepare_text` 这三个方法都接收 `&Renderer` 参数，把 GPU 工作委托回 `Renderer`。
+
+### 游戏代码的调用入口
+
+游戏应该用 **`ctx.prepare_text(font_name, text)`**（在 `update` / `update_ui` 中），而不是直接调 `ctx.assets.prepare_text(...)`。原因：`update` 阶段没有 `Renderer` 借用（take/swap 模式），所以 `Context::prepare_text` 只是把请求**排队**到 `Context::pending_text_prep`，由 `GameBridge` 在 `on_render` 开头 flush。
+
+```rust
+fn update(&mut self, ctx: &mut Context, dt: f32, input: &InputState) {
+    // ...
+    let mut to_prepare = String::new();
+    for msg in &self.messages { to_prepare.push_str(msg); }
+    if let Some(state) = ctx.ui_state.text_inputs.get(&chat_id) {
+        to_prepare.push_str(&state.text);
+    }
+    if let Some(preedit) = input.ime_preedit() {
+        to_prepare.push_str(&preedit.text);
+    }
+    ctx.prepare_text("cjk", &to_prepare); // 排队，零成本
+}
+```
+
+**调用约定**：把本帧将要绘制的所有非 ASCII 文本（消息列表、输入框 buffer、当前 IME preedit）拼起来一次性 prepare。idempotent —— 已缓存字符不会重复栅格化。准备失败仅打 warn，缺字以空白渲染，不影响游戏继续运行。
+
+**一帧抖动**：`prepare_text` 排队 → flush 在 `on_render` 开头 → 但 `update_ui` 阶段的 `text_width()` 测量发生在 flush 之前。所以某字符首次出现的那一帧，宽度测量用 fallback advance（`size * 0.5`），下一帧才精确。CJK 实际 advance ≈ `size * 1.0`，会有一帧约 50% 宽度的视觉抖动，仅在该字符首次出现时发生一次。
+
+### 字体配置
+
+`game.yaml` 中字体仍然是 `"路径:字号"` 格式，引擎本身**不自带字体**。
+
+```yaml
+assets:
+  fonts:
+    body: "assets/fonts/ui.ttf:14"
+    cjk: "assets/fonts/SourceHanSansSC-Regular.otf:14"   # 用户自备 CJK 字体
+```
+
+`examples/ui` 自带一份 [思源黑体 SC Regular](https://github.com/adobe-fonts/source-han-sans)（OFL 授权）作为 CJK 输入演示用字体，**仅用于示例**，不作为引擎内置资源。生产游戏需要自行选择并放入字体文件。
 
 ---
 

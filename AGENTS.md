@@ -27,7 +27,7 @@ vibe2d/
 │   ├── vibe_render/            # 基于 wgpu 的 sprite batch 渲染器 + 字体 atlas
 │   │   └── src/
 │   │       ├── renderer.rs     # Renderer、DrawCommand、sprite 批处理、截图
-│   │       ├── font.rs         # Font（fontdue 字形 atlas）
+│   │       ├── font.rs         # Font（fontdue lazy 字形 atlas，按需 rasterize、按需扩容）
 │   │       ├── texture.rs      # Texture、TextureId
 │   │       └── sprite.wgsl     # 顶点/片段着色器
 │   ├── vibe_platform/          # 平台抽象层（winit + wgpu 桌面端）
@@ -239,6 +239,30 @@ Feature 级联：游戏 crate → `vibe2d/vdp` → `vibe_debug` + `serde_json`
 2. 在 `crates/vibe2d/src/config.rs`（`AssetsConfig`）中添加配置字段
 3. 在 `crates/vibe2d/src/lib.rs` 的 `GameBridge::on_init()` 中添加加载调用
 
+### 字体与 CJK / IME
+
+引擎本身**不内置任何字体**，游戏自己在 `assets/fonts/` 下提供 TTF/OTF 文件并在 `game.yaml` 中以 `"路径:字号"` 注册。
+
+字体 atlas 是**懒加载** + **ASCII 自动预热**：
+
+- `Renderer::load_font()`（被 `AssetManager::load_fonts` 调用）创建 atlas 后立即栅格化可打印 ASCII（`0x20..=0x7E`），所以**英文/数字/标点开箱即用**，无需 `prepare_text`。
+- CJK / Emoji / 其他非 ASCII 字符**仍然是 lazy 的**：游戏必须在 `update()` / `update_ui()` 中显式调用 `ctx.prepare_text(font_name, text)`，把本帧将要绘制的所有字符（消息列表、TextInput buffer、IME preedit 等的并集）声明出来。
+- 缺字（未 prepare 的字符）渲染为空白，cursor advance 退化为半字号宽，**不会 panic**。
+- atlas 满了会自动翻倍（256 → 4096），重新栅格化所有已缓存字形。
+- 字体的覆盖范围决定能渲染什么：把中文丢给只含 ASCII 的英文字体仍然会得到空白（fontdue 找不到 glyph）。需要中文的 widget 必须使用覆盖了 CJK 的字体（如思源黑体）。
+
+**`prepare_text` 的调度模型**：
+- 游戏代码调 `ctx.prepare_text(font_name, text)` —— 这是个**纯排队**操作，不做任何 GPU 工作（`update` 阶段拿不到 `Renderer`）。
+- `GameBridge` 在 `on_render` 开头一次性 flush 队列，调用 `Renderer::prepare_text` 完成栅格化和 atlas 上传，然后才执行游戏的 `draw()` 和 UI 缓存的 draw command。
+- **后果**：某个字符**首次出现的那一帧**，`text_width` 用 fallback advance（`size * 0.5`）—— 下一帧字形已缓存，测量精确。CJK 实际 advance ≈ `size * 1.0`，会有一帧的视觉抖动，仅在该字符首次出现时发生一次。
+
+**架构边界**：
+- `vibe_render::Renderer` 拥有 `device` / `queue` / `texture_bind_group_layout`（包在 `Arc` 里），并对外提供 `load_texture` / `load_font` / `prepare_text` 三个高层 GPU 操作。
+- `vibe_asset::AssetManager` **不依赖 wgpu**，只持有已上传的 `Texture` / `Font` 句柄和名称索引；GPU 操作全部委托给 `Renderer` 的高层 API。
+- 这意味着新加资源类型时，"如何上传到 GPU"放在 `vibe_render`，"如何按名字查找"放在 `vibe_asset`，不要把 wgpu 类型泄漏到 asset 层。
+
+**桌面 IME**：平台层（`vibe_platform::desktop`）调用 `window.set_ime_allowed(true)` 并把 winit 的 `WindowEvent::Ime` 转发到 `InputState::on_ime_commit` / `on_ime_preedit`。`vibe_ui::TextInput` 自动处理 IME commit（整段插入）和 preedit（带下划线的浮层显示，不写入 buffer）。游戏代码无需感知 IME 协议，只需保证 TextInput 用的字体覆盖了用户语言，并在 update 阶段把 buffer 内容 + `input.ime_preedit().map(|p| &p.text)` 一起 prepare。参考 `examples/ui/src/main.rs::update`。
+
 ### 为游戏编写测试
 
 Vibe2D 分两层：
@@ -389,7 +413,9 @@ VDP 是基于 WebSocket + JSON-RPC 2.0 的运行时调试协议（`ws://127.0.0.
 
 - **`draw()` 的签名是 `&self`** — 不能在 `draw()` 中修改游戏状态。所有状态修改在 `update()` 中进行。UI 构建在 `update_ui()` 中完成，而非 `draw()`。
 - **虚拟坐标 vs 物理坐标** — 所有游戏代码使用虚拟坐标（如 512×288）。不要使用物理窗口像素。鼠标坐标由引擎自动转换。
-- **字体配置格式** — YAML 中字体使用 `"路径:字号"` 格式：`"assets/fonts/font.ttf:32"`。
+- **字体配置格式** — YAML 中字体使用 `"路径:字号"` 格式：`"assets/fonts/font.ttf:32"`。引擎不内置字体；ASCII 字符在 `load_font` 时自动预热，CJK 等需要游戏在 update 阶段用 `ctx.prepare_text(font_name, text)` 触发 lazy 栅格化（实际 GPU 工作在 `on_render` 开头统一 flush）。
+- **IME / 中文输入** — TextInput 默认开启 IME（macOS/Win/Linux）。游戏代码不需要做任何额外工作就能接收 IME commit；只需要保证当前焦点 TextInput 用的字体覆盖了用户语言（如中文用户用思源黑体），并在 update 阶段把 buffer 内容 + `input.ime_preedit().map(|p| p.text)` 一起 prepare。
+- **`vibe_asset` 不依赖 wgpu** — asset 层只管"名称→ID 索引"和"已上传句柄的容器"。所有 GPU 操作（解码、上传、字形栅格化）都通过 `Renderer::load_texture` / `load_font` / `prepare_text` 这三个高层方法完成。新增资源类型时不要在 `vibe_asset` 里 `use wgpu`。
 - **纹理名称必须匹配** — `ctx.assets.texture_id("player")` 查找的是 `game.yaml` 中 `assets.textures` 部分声明的名称。
 - **`__vibe_ui_white`** — 引擎自动创建的 1×1 白色像素纹理，用于 UI 矩形绘制。游戏纹理不要使用此名称。
 - **VDP `handle_vdp()` 兜底分支** — 始终以 `_ => Err(format!("Unknown method: {}", method))` 结尾，避免静默吞掉未知方法。

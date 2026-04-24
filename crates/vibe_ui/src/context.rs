@@ -35,6 +35,13 @@ pub struct UiContext<'a> {
     scroll_delta: f32,
     scroll_delta_x: f32,
     chars_this_frame: Vec<char>,
+    // ── IME state for the focused TextInput ──
+    /// Multi-character text committed by the IME this frame (e.g. a finalized Chinese word).
+    /// Inserted atomically into the focused text input.
+    ime_commit: String,
+    /// In-flight composition text (and caret byte offset). Rendered as an
+    /// underlined overlay at the cursor without being written into the buffer.
+    ime_preedit: Option<(String, Option<usize>)>,
 
     // Screen dimensions
     virtual_width: f32,
@@ -90,6 +97,8 @@ impl<'a> UiContext<'a> {
             scroll_delta: input.mouse_scroll_delta(),
             scroll_delta_x: input.mouse_scroll_delta_x(),
             chars_this_frame: input.chars_this_frame().to_vec(),
+            ime_commit: input.ime_commit().to_string(),
+            ime_preedit: input.ime_preedit().map(|p| (p.text.clone(), p.cursor_byte)),
             virtual_width,
             virtual_height,
             cursor_x: 0.0,
@@ -598,6 +607,8 @@ impl<'a> UiContext<'a> {
         if is_focused {
             // Snapshot key states before borrowing ui_state mutably
             let chars: Vec<char> = self.chars_this_frame.clone();
+            let ime_commit = self.ime_commit.clone();
+            let has_active_preedit = self.ime_preedit.is_some();
             let key_backspace = self.is_key_just_pressed(vibe_input::KeyCode::Backspace);
             let key_delete = self.is_key_just_pressed(vibe_input::KeyCode::Delete);
             let key_left = self.is_key_just_pressed(vibe_input::KeyCode::ArrowLeft);
@@ -609,10 +620,23 @@ impl<'a> UiContext<'a> {
 
             let state = self.ui_state.text_input_state(&id);
 
-            // Character input
-            for &ch in &chars {
-                state.text.insert(state.cursor_position, ch);
-                state.cursor_position += ch.len_utf8();
+            // Character input from regular keystrokes.
+            // Skipped while an IME composition is active — the platform layer
+            // already filters those, but we double-check defensively.
+            if !has_active_preedit {
+                for &ch in &chars {
+                    state.text.insert(state.cursor_position, ch);
+                    state.cursor_position += ch.len_utf8();
+                    changed = true;
+                }
+            }
+
+            // IME commit: insert the entire committed string atomically.
+            // This is what makes Chinese / Japanese / emoji input work — the
+            // IME hands us a finalized multi-character string in one event.
+            if !ime_commit.is_empty() {
+                state.text.insert_str(state.cursor_position, &ime_commit);
+                state.cursor_position += ime_commit.len();
                 changed = true;
             }
 
@@ -731,21 +755,55 @@ impl<'a> UiContext<'a> {
             self.draw_text_internal(font, &display_text, text_x, text_y, style.text_color);
         }
 
-        // Draw cursor when focused
+        // Draw cursor + IME preedit overlay when focused
         if is_focused {
-            let elapsed = self.ui_state.elapsed_time;
-            // 2 Hz cursor blink: on for even half-seconds, off for odd.
-            let blink = ((elapsed * 2.0) as u64).is_multiple_of(2);
-            if blink {
-                let cursor_text = &display_text[..cursor_position];
-                let cursor_x_offset = font.text_width(cursor_text);
+            let cursor_text = &display_text[..cursor_position];
+            let cursor_x_offset = font.text_width(cursor_text);
+
+            // IME preedit overlay (rendered above the regular text but not
+            // written into the buffer; it's pending composition).
+            // Drawn before the cursor so the cursor sits on top of it.
+            // Cloned out to release the immutable borrow on `self.ime_preedit`
+            // before calling the `&mut self` draw helpers.
+            let preedit_snapshot = self.ime_preedit.clone();
+            if let Some((preedit_text, preedit_caret)) = preedit_snapshot {
+                let preedit_x = text_x + cursor_x_offset;
+                self.draw_text_internal(font, &preedit_text, preedit_x, text_y, style.text_color);
+                // Underline the preedit so users can distinguish it from
+                // committed text (matches OS-native IME conventions).
+                let preedit_w = font.text_width(&preedit_text);
                 self.draw_rect(
-                    text_x + cursor_x_offset,
+                    preedit_x,
+                    text_y + font.line_height - 1.0,
+                    preedit_w,
+                    1.0,
+                    style.text_color,
+                );
+                // Caret inside the preedit (no blink — IME owns the caret).
+                let caret_byte = preedit_caret.unwrap_or(preedit_text.len());
+                let caret_offset =
+                    font.text_width(&preedit_text[..caret_byte.min(preedit_text.len())]);
+                self.draw_rect(
+                    preedit_x + caret_offset,
                     text_y,
                     1.0,
                     font.line_height,
                     style.cursor_color,
                 );
+            } else {
+                // Regular blinking cursor when no IME composition is active.
+                let elapsed = self.ui_state.elapsed_time;
+                // 2 Hz cursor blink: on for even half-seconds, off for odd.
+                let blink = ((elapsed * 2.0) as u64).is_multiple_of(2);
+                if blink {
+                    self.draw_rect(
+                        text_x + cursor_x_offset,
+                        text_y,
+                        1.0,
+                        font.line_height,
+                        style.cursor_color,
+                    );
+                }
             }
         }
 

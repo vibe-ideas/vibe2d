@@ -17,6 +17,9 @@ assets:
     title: "assets/fonts/ui.ttf:20"
     body: "assets/fonts/ui.ttf:14"
     small: "assets/fonts/ui.ttf:10"
+    # CJK font for the IME / Chinese input demo (lazy-rasterized atlas).
+    # Source Han Sans SC is open-source under the SIL Open Font License.
+    cjk: "assets/fonts/SourceHanSansSC-Regular.otf:14"
 
 input:
   actions:

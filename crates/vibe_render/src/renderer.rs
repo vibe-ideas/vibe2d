@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
@@ -24,13 +26,17 @@ pub struct DrawCommand {
 }
 
 /// The 2D renderer. Batches sprite draws and submits to GPU each frame.
+///
+/// `device`, `queue`, and `texture_bind_group_layout` are wrapped in [`Arc`]
+/// so that subsystems like [`crate::Font`]'s lazy glyph atlas can hold cheap
+/// references and upload pixel data outside the render path.
 pub struct Renderer {
-    pub device: wgpu::Device,
-    pub queue: wgpu::Queue,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     pub surface: wgpu::Surface<'static>,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub pipeline: wgpu::RenderPipeline,
-    pub texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub texture_bind_group_layout: Arc<wgpu::BindGroupLayout>,
     pub projection_bind_group: wgpu::BindGroup,
     pub projection_buffer: wgpu::Buffer,
     draw_commands: Vec<DrawCommand>,
@@ -54,6 +60,9 @@ impl Renderer {
         virtual_width: f32,
         virtual_height: f32,
     ) -> Self {
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
+
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("texture_bind_group_layout"),
@@ -195,7 +204,7 @@ impl Renderer {
             surface,
             surface_config,
             pipeline,
-            texture_bind_group_layout,
+            texture_bind_group_layout: Arc::new(texture_bind_group_layout),
             projection_bind_group,
             projection_buffer,
             draw_commands: Vec::with_capacity(256),
@@ -523,6 +532,73 @@ fn orthographic_projection(width: f32, height: f32) -> [f32; 16] {
 }
 
 impl Renderer {
+    /// Decode and upload an image-format file (PNG / JPG / etc.) into a
+    /// new GPU texture. Returns the [`Texture`] for the caller to register
+    /// into its asset registry.
+    ///
+    /// This is a high-level convenience that hides the renderer's
+    /// `device` / `queue` / `bind_group_layout` from non-render crates,
+    /// so asset code does not need to depend on `wgpu` directly.
+    pub fn load_texture(&self, label: &str, bytes: &[u8]) -> Result<Texture> {
+        Texture::from_bytes(
+            &self.device,
+            &self.queue,
+            &self.texture_bind_group_layout,
+            bytes,
+            label,
+        )
+    }
+
+    /// Parse font bytes and create the initial (ASCII-warmed, otherwise lazy)
+    /// glyph atlas. Returns the [`crate::Font`] together with its initial
+    /// atlas [`Texture`]; the caller must register the texture under
+    /// `atlas_texture_id` in its asset registry.
+    pub fn load_font(
+        &self,
+        bytes: &[u8],
+        size: f32,
+        atlas_texture_id: crate::TextureId,
+    ) -> Result<(crate::Font, Texture)> {
+        crate::Font::from_bytes(
+            &self.device,
+            &self.queue,
+            &self.texture_bind_group_layout,
+            bytes,
+            size,
+            atlas_texture_id,
+        )
+    }
+
+    /// Ensure every character in `text` has a rasterized glyph in `font`'s
+    /// atlas, allocating and uploading new pixels (or growing the atlas)
+    /// as needed.
+    ///
+    /// `atlas_slot` is the [`Texture`] slot in the caller's asset registry
+    /// that currently holds this font's atlas. If the atlas needs to grow
+    /// past its current size, a fresh GPU texture is allocated and written
+    /// into `atlas_slot` in place — the caller's `TextureId` stays valid
+    /// because it indexes into the same slot.
+    pub fn prepare_text(
+        &self,
+        font: &mut crate::Font,
+        atlas_slot: &mut Texture,
+        text: &str,
+    ) -> Result<()> {
+        match font.prepare_text(
+            &self.device,
+            &self.queue,
+            &self.texture_bind_group_layout,
+            &atlas_slot.texture,
+            text,
+        ) {
+            crate::PrepareOutcome::NoChange | crate::PrepareOutcome::AtlasUpdated => {}
+            crate::PrepareOutcome::AtlasResized(new_texture) => {
+                *atlas_slot = new_texture;
+            }
+        }
+        Ok(())
+    }
+
     /// Create a 1×1 white pixel texture for UI rectangle rendering.
     ///
     /// This is a runtime-generated internal texture, not a user asset.

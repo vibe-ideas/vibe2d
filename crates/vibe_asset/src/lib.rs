@@ -4,7 +4,14 @@ use std::path::Path;
 use anyhow::Result;
 use vibe_render::{Font, Renderer, Texture, TextureId};
 
-/// Manages loaded game assets (textures, fonts, audio).
+/// Manages loaded game assets (textures, fonts).
+///
+/// `AssetManager` is intentionally **GPU-backend agnostic**: it owns the
+/// already-uploaded [`Texture`] / [`Font`] handles and exposes a name → id
+/// lookup, but never touches `wgpu` directly. All GPU operations
+/// (texture decode + upload, font glyph rasterization) are funneled
+/// through [`Renderer`]'s high-level API, which is the only crate that
+/// holds GPU device/queue handles.
 #[derive(Default)]
 pub struct AssetManager {
     textures: Vec<Texture>,
@@ -17,7 +24,8 @@ impl AssetManager {
         Self::default()
     }
 
-    /// Load textures defined in the config.
+    /// Load textures defined in the config. Image bytes are read from disk
+    /// here, then handed to [`Renderer::load_texture`] for GPU upload.
     pub fn load_textures(
         &mut self,
         renderer: &Renderer,
@@ -35,14 +43,7 @@ impl AssetManager {
                 )
             })?;
 
-            let texture = Texture::from_bytes(
-                &renderer.device,
-                &renderer.queue,
-                &renderer.texture_bind_group_layout,
-                &bytes,
-                name,
-            )?;
-
+            let texture = renderer.load_texture(name, &bytes)?;
             let id = TextureId(self.textures.len());
             self.textures.push(texture);
             self.texture_names.insert(name.clone(), id);
@@ -72,6 +73,12 @@ impl AssetManager {
     }
 
     /// Load fonts defined in the config. Each entry maps name → "path:size".
+    ///
+    /// Glyphs are **not** rasterized at load time beyond the printable
+    /// ASCII warm-up that [`Renderer::load_font`] does internally — atlases
+    /// otherwise start empty and fill on demand via
+    /// [`AssetManager::prepare_text`]. This lets fonts with huge codepoint
+    /// coverage (CJK) load instantly.
     pub fn load_fonts(
         &mut self,
         renderer: &Renderer,
@@ -93,19 +100,12 @@ impl AssetManager {
                 anyhow::anyhow!("Failed to load font '{}' from {:?}: {}", name, full_path, e)
             })?;
 
-            let texture_id = TextureId(self.textures.len());
-            let (font, atlas_texture) = Font::from_bytes(
-                &renderer.device,
-                &renderer.queue,
-                &renderer.texture_bind_group_layout,
-                &bytes,
-                font_size,
-                texture_id,
-            )?;
+            let atlas_texture_id = TextureId(self.textures.len());
+            let (font, atlas_texture) = renderer.load_font(&bytes, font_size, atlas_texture_id)?;
 
             self.textures.push(atlas_texture);
             self.fonts.insert(name.clone(), font);
-            tracing::info!("Loaded font '{}' at {}px", name, font_size);
+            tracing::info!("Loaded font '{}' (lazy atlas, {}px)", name, font_size);
         }
         Ok(())
     }
@@ -113,6 +113,32 @@ impl AssetManager {
     /// Get a font by name.
     pub fn font(&self, name: &str) -> Option<&Font> {
         self.fonts.get(name)
+    }
+
+    /// Ensure that every character in `text` has been rasterized into the
+    /// font's glyph atlas, allocating and uploading new pixels as needed.
+    ///
+    /// **Call this in `update()` / `update_ui()` for any text you plan to
+    /// draw later in the frame.** The render path itself only consumes
+    /// already-prepared glyphs; characters not prepared in time will render
+    /// as blank space.
+    ///
+    /// All GPU work is delegated to [`Renderer::prepare_text`]; this method
+    /// only performs the name → font / atlas-slot lookup, so `AssetManager`
+    /// itself stays decoupled from `wgpu`.
+    pub fn prepare_text(&mut self, renderer: &Renderer, font_name: &str, text: &str) -> Result<()> {
+        let font = self
+            .fonts
+            .get_mut(font_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown font: {}", font_name))?;
+
+        let atlas_slot_idx = font.atlas_texture_id.0;
+        // Borrow the atlas slot mutably; `Renderer::prepare_text` may
+        // overwrite it in place if the atlas has to grow. The `TextureId`
+        // we handed out at load time stays valid because it indexes into
+        // the same slot in `self.textures`.
+        let atlas_slot = &mut self.textures[atlas_slot_idx];
+        renderer.prepare_text(font, atlas_slot, text)
     }
 
     /// Register a runtime-created texture with the given name.

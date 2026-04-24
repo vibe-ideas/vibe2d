@@ -14,7 +14,7 @@ pub mod prelude {
     pub use vibe_render::TextureId;
     pub use vibe_ui::{
         Anchor, ButtonStyle, LayoutDirection, PanelStyle, ScrollListStyle, Style, TextInputStyle,
-        UiColor, UiContext, UiOutput,
+        UiColor, UiContext, UiOutput, WidgetId,
     };
 }
 
@@ -155,6 +155,7 @@ pub fn run<G: Game + 'static>(config_path: &str) {
         virtual_width,
         virtual_height,
         pending_screenshot: None,
+        pending_text_prep: Vec::new(),
         #[cfg(feature = "vdp")]
         vdp: vdp_channel,
         #[cfg(feature = "vdp")]
@@ -186,6 +187,20 @@ pub fn run<G: Game + 'static>(config_path: &str) {
 
 use std::path::PathBuf;
 
+/// Drains [`Context::pending_text_prep`] and uploads the requested glyphs
+/// into each font's atlas via the renderer.
+///
+/// Called both at the end of `on_init` (so prep done in `Game::new` lands
+/// in time for the very first frame) and at the start of `on_render`
+/// (the normal per-frame path).
+fn flush_text_prep(ctx: &mut Context, renderer: &vibe_render::Renderer) {
+    for (font_name, text) in ctx.pending_text_prep.drain(..) {
+        if let Err(e) = ctx.assets.prepare_text(renderer, &font_name, &text) {
+            tracing::warn!("prepare_text(font={}) failed: {}", font_name, e);
+        }
+    }
+}
+
 /// Bridges the user's Game implementation to the platform callbacks.
 struct GameBridge<G: Game> {
     game: Option<G>,
@@ -198,6 +213,11 @@ struct GameBridge<G: Game> {
     virtual_width: f32,
     virtual_height: f32,
     pending_screenshot: Option<PathBuf>,
+
+    /// Carries `(font_name, text)` glyph-prep requests from `update` (where
+    /// the renderer is not borrowed) into `on_render` (where it is). See
+    /// [`Context::prepare_text`] and [`flush_text_prep`].
+    pending_text_prep: Vec<(String, String)>,
 
     // ── VDP fields ──
     #[cfg(feature = "vdp")]
@@ -264,9 +284,15 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
             ui_state: std::mem::take(&mut self.ui_state),
             virtual_width: self.virtual_width,
             virtual_height: self.virtual_height,
+            pending_text_prep: Vec::new(),
         };
 
         self.game = Some(G::new(&mut ctx));
+
+        // Flush any text prep requested during Game::new immediately, since
+        // the renderer is in scope right here. (Most games queue all their
+        // text prep from `update`, but a few may pre-warm in `new`.)
+        flush_text_prep(&mut ctx, renderer);
 
         self.assets = ctx.assets;
         self.audio = ctx.audio;
@@ -322,8 +348,12 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
                             ui_state: std::mem::take(&mut self.ui_state),
                             virtual_width: self.virtual_width,
                             virtual_height: self.virtual_height,
+                            pending_text_prep: std::mem::take(&mut self.pending_text_prep),
                         };
                         game.update(&mut ctx, dt_step, input);
+                        // Carry queued text prep over to the render phase
+                        // (we don't have a Renderer here in `on_update`).
+                        self.pending_text_prep = ctx.pending_text_prep;
                         self.assets = ctx.assets;
                         self.audio = ctx.audio;
                         self.ui_state = ctx.ui_state;
@@ -407,9 +437,12 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
                     ui_state: std::mem::take(&mut self.ui_state),
                     virtual_width: self.virtual_width,
                     virtual_height: self.virtual_height,
+                    pending_text_prep: std::mem::take(&mut self.pending_text_prep),
                 };
                 game.update(&mut ctx, effective_dt, input);
                 game.update_ui(&mut ctx, input);
+                // Carry queued text prep over to the render phase.
+                self.pending_text_prep = ctx.pending_text_prep;
                 self.assets = ctx.assets;
                 self.audio = ctx.audio;
                 self.ui_state = ctx.ui_state;
@@ -429,13 +462,19 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
         }
 
         if let Some(game) = &self.game {
-            let ctx = Context {
+            let mut ctx = Context {
                 assets: std::mem::take(&mut self.assets),
                 audio: std::mem::take(&mut self.audio),
                 ui_state: std::mem::take(&mut self.ui_state),
                 virtual_width: self.virtual_width,
                 virtual_height: self.virtual_height,
+                pending_text_prep: std::mem::take(&mut self.pending_text_prep),
             };
+
+            // Flush any pending font glyph preparation **before** drawing,
+            // so text laid out this frame finds its glyphs in the atlas.
+            flush_text_prep(&mut ctx, renderer);
+
             let mut screen = Screen::new(renderer, self.virtual_width, self.virtual_height);
             game.draw(&ctx, &mut screen);
 

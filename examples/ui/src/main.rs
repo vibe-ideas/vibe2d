@@ -24,11 +24,12 @@ impl Game for UiDemo {
                 "Welcome to the UI demo!".into(),
                 "Try clicking buttons and typing.".into(),
                 "Scroll with wheel, Shift+wheel for horizontal.".into(),
+                "试试中文输入：你好，世界！".into(),
             ],
         }
     }
 
-    fn update(&mut self, _ctx: &mut Context, dt: f32, _input: &InputState) {
+    fn update(&mut self, ctx: &mut Context, dt: f32, input: &InputState) {
         // Animate the progress bar back and forth
         self.progress += dt * 0.3 * self.progress_direction;
         if self.progress >= 1.0 {
@@ -38,6 +39,29 @@ impl Game for UiDemo {
             self.progress = 0.0;
             self.progress_direction = 1.0;
         }
+
+        // ── Lazy font preparation ──
+        // The CJK atlas is empty at startup. Before the UI / draw phase
+        // tries to lay out any character, we need to rasterize it. We
+        // prepare the union of: every chat message, the live text input
+        // value, and any in-flight IME composition.
+        let mut to_prepare = String::new();
+        for msg in &self.messages {
+            to_prepare.push_str(msg);
+        }
+        // Read the chat input buffer directly from UiState so we don't need
+        // a UiContext (which can only be built inside update_ui).
+        let chat_id = vibe2d::prelude::WidgetId::new("chat_input");
+        if let Some(state) = ctx.ui_state.text_inputs.get(&chat_id) {
+            to_prepare.push_str(&state.text);
+        }
+        if let Some(preedit) = input.ime_preedit() {
+            to_prepare.push_str(&preedit.text);
+        }
+        // Queue glyph preparation for the engine to perform right before
+        // rendering — we don't have a Renderer in `update`. Idempotent on
+        // already-cached characters, so calling it every frame is cheap.
+        ctx.prepare_text("cjk", &to_prepare);
     }
 
     fn update_ui(&mut self, ctx: &mut Context, input: &InputState) {
@@ -94,15 +118,18 @@ impl Game for UiDemo {
             ui.progress_bar(self.progress, 150.0, 12.0);
         }
 
-        // ── Row 1, Col 3: Text Input ────────────────────────────
+        // ── Row 1, Col 3: Text Input (CJK-capable, IME-aware) ──
         ui.set_anchor(Anchor::TopLeft);
         ui.set_cursor(col3, row1);
         ui.set_spacing(4.0);
 
-        if let Some(font) = ctx.assets.font("body") {
-            ui.label_colored(font, "Text Input", UiColor::from_hex(0x55BBFF));
+        if let (Some(label_font), Some(cjk_font)) =
+            (ctx.assets.font("body"), ctx.assets.font("cjk"))
+        {
+            ui.label_colored(label_font, "Text Input (CJK)", UiColor::from_hex(0x55BBFF));
+            // Use the CJK font so Chinese / IME preedit can render properly.
             let input_resp =
-                ui.text_input_with_placeholder("chat_input", font, 155.0, "Type here...");
+                ui.text_input_with_placeholder("chat_input", cjk_font, 155.0, "中/英 输入...");
             if input_resp.submitted {
                 let text = ui.text_input_value("chat_input");
                 if !text.is_empty() {
@@ -162,17 +189,23 @@ impl Game for UiDemo {
         }
 
         // ── Row 2, Col 3: Scroll List ───────────────────────────
+        // Messages may contain CJK (welcome line + anything submitted via the
+        // CJK text input above), so render the list with the CJK font. The
+        // header label uses the body font for visual consistency with the
+        // other section headers.
         ui.set_anchor(Anchor::TopLeft);
         ui.set_cursor(col3, row2);
         ui.set_spacing(4.0);
 
-        if let Some(font) = ctx.assets.font("body") {
-            ui.label_colored(font, "Scroll List", UiColor::from_hex(0x55BBFF));
+        if let (Some(header_font), Some(item_font)) =
+            (ctx.assets.font("body"), ctx.assets.font("cjk"))
+        {
+            ui.label_colored(header_font, "Scroll List", UiColor::from_hex(0x55BBFF));
 
             let messages = &self.messages;
             ui.scroll_list("msg_list", 155.0, 110.0, |ui| {
                 for msg in messages {
-                    ui.label(font, msg);
+                    ui.label(item_font, msg);
                 }
             });
         }

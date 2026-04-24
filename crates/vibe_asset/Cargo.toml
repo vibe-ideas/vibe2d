@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 vibe_render = { workspace = true }
-image.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
 anyhow.workspace = true

@@ -29,9 +29,29 @@ pub struct InputState {
     // ── Character input (for UI text input) ──
     chars_received: Vec<char>,
 
+    // ── IME (Input Method Editor) ──
+    /// Text committed by the IME this frame (the result of finalizing a
+    /// composition, e.g. selecting a Chinese candidate). Multi-character
+    /// strings are inserted as one atomic unit, unlike `chars_received`.
+    ime_commit: String,
+    /// In-flight composition text being edited by the IME, with the cursor
+    /// position (byte offset within the preedit). `None` when no IME
+    /// composition is active. The preedit must be rendered as a hint above
+    /// the focused widget but **not** appended to the widget's text buffer.
+    ime_preedit: Option<ImePreedit>,
+
     // ── Mouse scroll ──
     scroll_delta: f32,
     scroll_delta_x: f32,
+}
+
+/// In-progress IME composition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImePreedit {
+    /// The text currently being composed (e.g. "ni hao" / "你好" candidates).
+    pub text: String,
+    /// Caret byte offset inside `text`. `None` when the cursor is hidden.
+    pub cursor_byte: Option<usize>,
 }
 
 /// Input action mapping from game.yaml
@@ -57,6 +77,8 @@ impl InputState {
             mouse_just_released: HashMap::new(),
             mouse_actions: HashMap::new(),
             chars_received: Vec::new(),
+            ime_commit: String::new(),
+            ime_preedit: None,
             scroll_delta: 0.0,
             scroll_delta_x: 0.0,
         }
@@ -86,12 +108,17 @@ impl InputState {
     }
 
     /// Called at the start of each frame to clear per-frame state.
+    ///
+    /// Note: `ime_preedit` persists across frames — it represents IME
+    /// composition state, which is cleared by the platform layer via
+    /// `clear_ime_preedit()` when the IME explicitly ends/cancels.
     pub fn begin_frame(&mut self) {
         self.just_pressed.clear();
         self.just_released.clear();
         self.mouse_just_pressed.clear();
         self.mouse_just_released.clear();
         self.chars_received.clear();
+        self.ime_commit.clear();
         self.scroll_delta = 0.0;
         self.scroll_delta_x = 0.0;
     }
@@ -183,6 +210,43 @@ impl InputState {
     /// Called by the platform layer when a printable character is received.
     pub fn on_char_received(&mut self, ch: char) {
         self.chars_received.push(ch);
+    }
+
+    // ── IME ──
+
+    /// Text committed by the IME this frame, if any (e.g. a finalized Chinese word).
+    /// Empty when no commit happened this frame.
+    pub fn ime_commit(&self) -> &str {
+        &self.ime_commit
+    }
+
+    /// Current in-progress IME composition, if any.
+    /// Returns `None` when no IME composition is active.
+    pub fn ime_preedit(&self) -> Option<&ImePreedit> {
+        self.ime_preedit.as_ref()
+    }
+
+    /// Called by the platform layer when the IME commits a composition.
+    /// Multiple commits within the same frame are concatenated (rare in practice).
+    pub fn on_ime_commit(&mut self, text: &str) {
+        self.ime_commit.push_str(text);
+        // A commit always ends the composition.
+        self.ime_preedit = None;
+    }
+
+    /// Called by the platform layer for IME preedit updates.
+    /// Pass an empty `text` to clear the preedit.
+    pub fn on_ime_preedit(&mut self, text: String, cursor_byte: Option<usize>) {
+        if text.is_empty() {
+            self.ime_preedit = None;
+        } else {
+            self.ime_preedit = Some(ImePreedit { text, cursor_byte });
+        }
+    }
+
+    /// Explicitly clear any in-progress IME composition (e.g. on focus loss).
+    pub fn clear_ime_preedit(&mut self) {
+        self.ime_preedit = None;
     }
 
     // ── Mouse scroll ──
@@ -430,6 +494,53 @@ mod tests {
         assert_eq!(input.chars_this_frame(), &['a', 'b']);
         input.begin_frame();
         assert!(input.chars_this_frame().is_empty());
+    }
+
+    #[test]
+    fn ime_commit_buffered_and_cleared_each_frame() {
+        let mut input = InputState::new();
+        assert_eq!(input.ime_commit(), "");
+        input.on_ime_commit("你好");
+        assert_eq!(input.ime_commit(), "你好");
+        // Multiple commits in the same frame concatenate.
+        input.on_ime_commit("世界");
+        assert_eq!(input.ime_commit(), "你好世界");
+        input.begin_frame();
+        assert_eq!(input.ime_commit(), "");
+    }
+
+    #[test]
+    fn ime_commit_clears_active_preedit() {
+        let mut input = InputState::new();
+        input.on_ime_preedit("nih".to_string(), Some(3));
+        assert!(input.ime_preedit().is_some());
+        input.on_ime_commit("你");
+        assert!(input.ime_preedit().is_none());
+    }
+
+    #[test]
+    fn ime_preedit_persists_across_frames_until_cleared() {
+        let mut input = InputState::new();
+        input.on_ime_preedit("ni".to_string(), Some(2));
+        let pe = input.ime_preedit().expect("preedit set");
+        assert_eq!(pe.text, "ni");
+        assert_eq!(pe.cursor_byte, Some(2));
+
+        // begin_frame must NOT clear the preedit (it's a stateful IME composition).
+        input.begin_frame();
+        assert!(input.ime_preedit().is_some());
+
+        // Empty preedit text clears it.
+        input.on_ime_preedit(String::new(), None);
+        assert!(input.ime_preedit().is_none());
+    }
+
+    #[test]
+    fn ime_preedit_explicit_clear() {
+        let mut input = InputState::new();
+        input.on_ime_preedit("x".to_string(), Some(1));
+        input.clear_ime_preedit();
+        assert!(input.ime_preedit().is_none());
     }
 
     #[test]

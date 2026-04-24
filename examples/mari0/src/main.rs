@@ -324,7 +324,12 @@ enum BlockContent {
     Mushroom,
     Star,
     OneUp,
-    FireFlower,
+    // Note: there is intentionally no `FireFlower` variant. In SMB the
+    // FireFlower is *produced* dynamically when a big Mario hits a
+    // `Mushroom` block (see the `BlockContent::Mushroom` arm in the block
+    // hit logic) — level data only ever stores `Mushroom`. If a future
+    // level needs to force a FireFlower regardless of Mario's state, add
+    // the variant back together with a tilemap producer.
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1636,10 +1641,7 @@ impl Mari0Game {
                         });
                         ctx.audio.play("coin");
                     }
-                    BlockContent::Mushroom
-                    | BlockContent::Star
-                    | BlockContent::OneUp
-                    | BlockContent::FireFlower => {
+                    BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp => {
                         self.level.tiles[row][col] = SMB_QUESTION_USED;
                         self.level.block_contents.remove(&key);
                         let item_type = match content {
@@ -1651,7 +1653,6 @@ impl Mari0Game {
                                 }
                             }
                             BlockContent::Star => ItemType::Star,
-                            BlockContent::FireFlower => ItemType::FireFlower,
                             _ => ItemType::OneUp,
                         };
                         self.items.push(Item {
@@ -1769,10 +1770,7 @@ impl Mari0Game {
                             });
                             ctx.audio.play("coin");
                         }
-                        BlockContent::Mushroom
-                        | BlockContent::Star
-                        | BlockContent::OneUp
-                        | BlockContent::FireFlower => {
+                        BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp => {
                             self.level.tiles[row][col] = SMB_QUESTION_USED;
                             self.level.block_contents.remove(&key);
                             let item_type = match content {
@@ -1784,7 +1782,6 @@ impl Mari0Game {
                                     }
                                 }
                                 BlockContent::Star => ItemType::Star,
-                                BlockContent::FireFlower => ItemType::FireFlower,
                                 _ => ItemType::OneUp,
                             };
                             self.items.push(Item {
@@ -1850,10 +1847,7 @@ impl Mari0Game {
                     self.level.tiles[row][col] = SMB_QUESTION_USED;
                     self.level.block_contents.remove(&key);
                     match content {
-                        BlockContent::Mushroom
-                        | BlockContent::Star
-                        | BlockContent::OneUp
-                        | BlockContent::FireFlower => {
+                        BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp => {
                             let item_type = match content {
                                 BlockContent::Mushroom => {
                                     if self.player.is_big {
@@ -1863,7 +1857,6 @@ impl Mari0Game {
                                     }
                                 }
                                 BlockContent::Star => ItemType::Star,
-                                BlockContent::FireFlower => ItemType::FireFlower,
                                 _ => ItemType::OneUp,
                             };
                             self.items.push(Item {
@@ -3098,7 +3091,6 @@ impl Game for Mari0Game {
                         BlockContent::Mushroom => "mushroom",
                         BlockContent::Star => "star",
                         BlockContent::OneUp => "1up",
-                        BlockContent::FireFlower => "fire_flower",
                     },
                 })
             })

@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{Ime, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::PhysicalKey;
 use winit::window::{Window, WindowId};
@@ -67,6 +67,11 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                 .create_window(win_attrs)
                 .expect("Failed to create window"),
         );
+
+        // Enable IME so winit emits WindowEvent::Ime{Enabled,Preedit,Commit,Disabled}.
+        // This is what makes Chinese / Japanese / Korean / emoji-picker input work.
+        // No-op on platforms that don't support it.
+        window.set_ime_allowed(true);
 
         // Create wgpu instance + surface + device
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -162,8 +167,11 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                         self.input.on_key_released(keycode);
                     }
                 }
-                // Forward printable characters for UI text input
+                // Forward printable characters for UI text input.
+                // Skip when an IME composition is active — those keystrokes belong
+                // to the IME, and the resulting text will arrive via WindowEvent::Ime.
                 if event.state.is_pressed()
+                    && self.input.ime_preedit().is_none()
                     && let Some(ref text) = event.text
                 {
                     for ch in text.chars() {
@@ -173,6 +181,22 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                     }
                 }
             }
+            WindowEvent::Ime(ime) if !self.callbacks.should_suppress_input() => match ime {
+                Ime::Enabled | Ime::Disabled => {
+                    // Disabled means the IME composition was abandoned; clear any
+                    // leftover preedit so widgets stop showing stale composition text.
+                    self.input.clear_ime_preedit();
+                }
+                Ime::Preedit(text, cursor_range) => {
+                    // winit reports the cursor as a (start, end) byte range; we only
+                    // use the start as the caret position. Empty `text` ends preedit.
+                    let cursor_byte = cursor_range.map(|(start, _end)| start);
+                    self.input.on_ime_preedit(text, cursor_byte);
+                }
+                Ime::Commit(text) => {
+                    self.input.on_ime_commit(&text);
+                }
+            },
             WindowEvent::CursorMoved { position, .. } => {
                 if !self.callbacks.should_suppress_input()
                     && let Some(window) = &self.window
