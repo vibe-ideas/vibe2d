@@ -1,6 +1,6 @@
+use crate::Color;
 use crate::context::Context;
 use crate::screen::Screen;
-use crate::Color;
 use vibe_input::InputState;
 
 /// The main trait users implement to create a game.
@@ -40,7 +40,11 @@ pub trait Game {
     /// Handle a VDP command to modify game state.
     /// Returns Ok(Value) on success, or an error message.
     #[cfg(feature = "vdp")]
-    fn handle_vdp(&mut self, _method: &str, _params: &serde_json::Value) -> Result<serde_json::Value, String> {
+    fn handle_vdp(
+        &mut self,
+        _method: &str,
+        _params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         Err("Not implemented".to_string())
     }
 }

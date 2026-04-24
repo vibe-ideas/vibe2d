@@ -12,3 +12,13 @@ vdp = ["vibe2d/vdp", "dep:serde_json"]
 vibe2d = { workspace = true }
 tracing.workspace = true
 serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+# vibe_test is only ever pulled into test builds — release builds
+# (`cargo build --release`) don't see it at all. The explicit
+# `features = ["vdp"]` makes the VDP-client dependency chain obvious
+# and future-proofs against adding non-VDP helpers to vibe_test.
+vibe_test = { workspace = true, features = ["vdp"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+anyhow.workspace = true
+serde_json.workspace = true

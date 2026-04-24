@@ -13,16 +13,11 @@ pub enum Anchor {
 }
 
 /// Direction in which widgets are stacked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutDirection {
+    #[default]
     Vertical,
     Horizontal,
-}
-
-impl Default for LayoutDirection {
-    fn default() -> Self {
-        Self::Vertical
-    }
 }
 
 /// Compute the top-left origin for a block of given size, placed at the given anchor

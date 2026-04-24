@@ -130,52 +130,52 @@ type Shape = [(i32, i32); 4];
 const SHAPES: [[Shape; 4]; 7] = [
     // I
     [
-        [(0, -1), (0, 0), (0, 1), (0, 2)],   // N
-        [(-1, 1), (0, 1), (1, 1), (2, 1)],    // E
-        [(1, -1), (1, 0), (1, 1), (1, 2)],    // S
-        [(-1, 0), (0, 0), (1, 0), (2, 0)],    // W
+        [(0, -1), (0, 0), (0, 1), (0, 2)], // N
+        [(-1, 1), (0, 1), (1, 1), (2, 1)], // E
+        [(1, -1), (1, 0), (1, 1), (1, 2)], // S
+        [(-1, 0), (0, 0), (1, 0), (2, 0)], // W
     ],
     // O
     [
-        [(0, 0), (0, 1), (1, 0), (1, 1)],     // N
-        [(0, 0), (0, 1), (1, 0), (1, 1)],     // E
-        [(0, 0), (0, 1), (1, 0), (1, 1)],     // S
-        [(0, 0), (0, 1), (1, 0), (1, 1)],     // W
+        [(0, 0), (0, 1), (1, 0), (1, 1)], // N
+        [(0, 0), (0, 1), (1, 0), (1, 1)], // E
+        [(0, 0), (0, 1), (1, 0), (1, 1)], // S
+        [(0, 0), (0, 1), (1, 0), (1, 1)], // W
     ],
     // T
     [
-        [(-1, 0), (0, -1), (0, 0), (0, 1)],   // N: nub up
-        [(-1, 0), (0, 0), (0, 1), (1, 0)],    // E: nub right
-        [(0, -1), (0, 0), (0, 1), (1, 0)],    // S: nub down
-        [(-1, 0), (0, -1), (0, 0), (1, 0)],   // W: nub left
+        [(-1, 0), (0, -1), (0, 0), (0, 1)], // N: nub up
+        [(-1, 0), (0, 0), (0, 1), (1, 0)],  // E: nub right
+        [(0, -1), (0, 0), (0, 1), (1, 0)],  // S: nub down
+        [(-1, 0), (0, -1), (0, 0), (1, 0)], // W: nub left
     ],
     // S
     [
-        [(-1, 0), (-1, 1), (0, -1), (0, 0)],  // N
-        [(-1, 0), (0, 0), (0, 1), (1, 1)],    // E
-        [(0, 0), (0, 1), (1, -1), (1, 0)],    // S
-        [(-1, -1), (0, -1), (0, 0), (1, 0)],  // W
+        [(-1, 0), (-1, 1), (0, -1), (0, 0)], // N
+        [(-1, 0), (0, 0), (0, 1), (1, 1)],   // E
+        [(0, 0), (0, 1), (1, -1), (1, 0)],   // S
+        [(-1, -1), (0, -1), (0, 0), (1, 0)], // W
     ],
     // Z
     [
-        [(-1, -1), (-1, 0), (0, 0), (0, 1)],  // N
-        [(-1, 1), (0, 0), (0, 1), (1, 0)],    // E
-        [(0, -1), (0, 0), (1, 0), (1, 1)],    // S
-        [(-1, 0), (0, -1), (0, 0), (1, -1)],  // W
+        [(-1, -1), (-1, 0), (0, 0), (0, 1)], // N
+        [(-1, 1), (0, 0), (0, 1), (1, 0)],   // E
+        [(0, -1), (0, 0), (1, 0), (1, 1)],   // S
+        [(-1, 0), (0, -1), (0, 0), (1, -1)], // W
     ],
     // J
     [
-        [(-1, -1), (0, -1), (0, 0), (0, 1)],  // N
-        [(-1, 0), (-1, 1), (0, 0), (1, 0)],   // E
-        [(0, -1), (0, 0), (0, 1), (1, 1)],    // S
-        [(-1, 0), (0, 0), (1, -1), (1, 0)],   // W
+        [(-1, -1), (0, -1), (0, 0), (0, 1)], // N
+        [(-1, 0), (-1, 1), (0, 0), (1, 0)],  // E
+        [(0, -1), (0, 0), (0, 1), (1, 1)],   // S
+        [(-1, 0), (0, 0), (1, -1), (1, 0)],  // W
     ],
     // L
     [
-        [(-1, 1), (0, -1), (0, 0), (0, 1)],   // N
-        [(-1, 0), (0, 0), (1, 0), (1, 1)],    // E
-        [(0, -1), (0, 0), (0, 1), (1, -1)],   // S
-        [(-1, -1), (-1, 0), (0, 0), (1, 0)],  // W
+        [(-1, 1), (0, -1), (0, 0), (0, 1)],  // N
+        [(-1, 0), (0, 0), (1, 0), (1, 1)],   // E
+        [(0, -1), (0, 0), (0, 1), (1, -1)],  // S
+        [(-1, -1), (-1, 0), (0, 0), (1, 0)], // W
     ],
 ];
 
@@ -489,7 +489,10 @@ impl TetrisGame {
         };
         if collides(&piece, &self.grid) {
             // Try one row up
-            let piece_up = Piece { y: SPAWN_ROW - 1, ..piece.clone() };
+            let piece_up = Piece {
+                y: SPAWN_ROW - 1,
+                ..piece.clone()
+            };
             if collides(&piece_up, &self.grid) {
                 self.current = None;
                 return false; // game over
@@ -498,7 +501,11 @@ impl TetrisGame {
         } else {
             self.current = Some(piece);
         }
-        self.ghost = self.current.as_ref().map(|p| ghost_y(p, &self.grid)).unwrap_or(0);
+        self.ghost = self
+            .current
+            .as_ref()
+            .map(|p| ghost_y(p, &self.grid))
+            .unwrap_or(0);
         self.gravity_timer = gravity_interval(self.level);
         self.lock_active = false;
         self.lock_timer = LOCK_DELAY;
@@ -533,7 +540,11 @@ impl TetrisGame {
             if piece.piece_type == PieceType::O {
                 return false; // O doesn't rotate
             }
-            let new_rot = if cw { piece.rotation.cw() } else { piece.rotation.ccw() };
+            let new_rot = if cw {
+                piece.rotation.cw()
+            } else {
+                piece.rotation.ccw()
+            };
             let ki = kick_index(piece.rotation, new_rot);
             let kicks = if piece.piece_type == PieceType::I {
                 &KICKS_I[ki]
@@ -659,7 +670,11 @@ impl TetrisGame {
                 }
             }
             self.hold_used = true;
-            self.ghost = self.current.as_ref().map(|p| ghost_y(p, &self.grid)).unwrap_or(0);
+            self.ghost = self
+                .current
+                .as_ref()
+                .map(|p| ghost_y(p, &self.grid))
+                .unwrap_or(0);
             self.gravity_timer = gravity_interval(self.level);
             self.lock_active = false;
             self.lock_timer = LOCK_DELAY;
@@ -942,7 +957,12 @@ impl Game for TetrisGame {
             screen.draw_text(font, "LEVEL", STATS_X, STATS_Y + 56.0);
             screen.draw_text(font, &format!("{}", self.level), STATS_X, STATS_Y + 78.0);
             screen.draw_text(font, "LINES", STATS_X, STATS_Y + 112.0);
-            screen.draw_text(font, &format!("{}", self.lines_cleared), STATS_X, STATS_Y + 134.0);
+            screen.draw_text(
+                font,
+                &format!("{}", self.lines_cleared),
+                STATS_X,
+                STATS_Y + 134.0,
+            );
         }
 
         // ── Game over overlay ──
@@ -1120,8 +1140,7 @@ impl Game for TetrisGame {
                     self.hold_piece = None;
                 } else {
                     let name = piece_val.as_str().ok_or("'piece' must be null or string")?;
-                    self.hold_piece =
-                        Some(PieceType::from_name(name).ok_or("Invalid piece type")?);
+                    self.hold_piece = Some(PieceType::from_name(name).ok_or("Invalid piece type")?);
                 }
                 self.hold_used = params
                     .get("hold_used")

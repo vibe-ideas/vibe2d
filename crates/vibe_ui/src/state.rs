@@ -106,16 +106,12 @@ impl UiState {
 
     /// Get or create TextInput state for the given ID.
     pub fn text_input_state(&mut self, id: &WidgetId) -> &mut TextInputState {
-        self.text_inputs
-            .entry(id.clone())
-            .or_insert_with(TextInputState::default)
+        self.text_inputs.entry(id.clone()).or_default()
     }
 
     /// Get or create ScrollList state for the given ID.
     pub fn scroll_list_state(&mut self, id: &WidgetId) -> &mut ScrollListState {
-        self.scroll_lists
-            .entry(id.clone())
-            .or_insert_with(ScrollListState::default)
+        self.scroll_lists.entry(id.clone()).or_default()
     }
 
     /// Drain all pending VDP actions for consumption.

@@ -26,4 +26,5 @@ input:
 debug:
   vdp:
     enabled: true
-    port: 9229
+    # Non-standard port so parallel flappy-bird/tetris tests don't collide.
+    port: 9230

@@ -1,7 +1,7 @@
-mod texture;
-mod renderer;
 mod font;
+mod renderer;
+mod texture;
 
-pub use texture::{Texture, TextureId};
-pub use renderer::{Renderer, DrawCommand};
 pub use font::Font;
+pub use renderer::{DrawCommand, Renderer};
+pub use texture::{Texture, TextureId};

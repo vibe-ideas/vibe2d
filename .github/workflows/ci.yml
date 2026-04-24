@@ -1,0 +1,120 @@
+name: CI
+
+# Keep this pipeline fast: only unit tests + lint gates.
+# VDP integration tests (marked `#[ignore]`) spawn real game windows and
+# need a GPU/display server, which GitHub-hosted runners can't provide
+# reliably. Those are expected to run locally via:
+#   cargo test -p <game> -- --ignored --test-threads=1
+# (See AGENTS.md → "测试与验证" for the full policy.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Unit tests (the main gate) ────────────────────────────────
+  # `cargo test --workspace` runs every crate's `#[cfg(test)]` modules.
+  # Integration tests tagged `#[ignore]` (e.g. examples/ui/tests/vdp_ui.rs)
+  # are skipped automatically — that's the contract we want.
+  test:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # Linux needs ALSA headers for vibe_audio (rodio → cpal → alsa-sys).
+      - name: Install Linux audio deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+
+      - name: Run unit tests
+        # --workspace: every crate in the workspace
+        # --lib --bins --tests: build all test harnesses but
+        #   `#[ignore]`-gated tests (VDP integration) stay skipped by default
+        run: cargo test --workspace --lib --bins --tests --locked
+
+  # ── Format check ──────────────────────────────────────────────
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  # ── Clippy (lints) ────────────────────────────────────────────
+  # Scoped to the engine crates only. Example games under `examples/*` are
+  # illustrative code — they're held to compile-cleanly + format standards,
+  # but we don't enforce full clippy strictness on them because game demos
+  # often keep deliberately-unused variants, magic numbers, etc. as
+  # placeholders. Engine crates are the product; those do get -D warnings.
+  clippy:
+    name: clippy (engine crates)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux audio deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+      - name: Clippy on engine crates + cli
+        run: |
+          cargo clippy \
+            -p vibe2d \
+            -p vibe_render \
+            -p vibe_platform \
+            -p vibe_input \
+            -p vibe_asset \
+            -p vibe_audio \
+            -p vibe_debug \
+            -p vibe_ui \
+            -p vibe_physics \
+            -p vibe_test \
+            -p vibe-cli \
+            --all-targets --locked -- -D warnings
+
+  # ── Release build without VDP ────────────────────────────────
+  # Confirms the `--no-default-features` path (VDP stripped) still compiles.
+  # AGENTS.md mandates testing this whenever feature gating changes,
+  # and running it on every push catches regressions cheaply.
+  no-default-features:
+    name: Build without VDP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux audio deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+      - run: cargo build --workspace --no-default-features --locked

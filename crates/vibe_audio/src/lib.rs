@@ -6,20 +6,16 @@ use anyhow::Result;
 use rodio::Source;
 
 /// Audio engine that loads and plays sound effects.
+///
+/// `Default` intentionally produces a silent instance (no device, no streams)
+/// so `std::mem::take(&mut engine)` during the take/swap cycle in
+/// `GameBridge::on_update`/`on_render` has something cheap to leave behind.
+/// For an actually-playing engine, construct via [`AudioEngine::new`].
+#[derive(Default)]
 pub struct AudioEngine {
     _stream: Option<rodio::OutputStream>,
     handle: Option<rodio::OutputStreamHandle>,
     sounds: HashMap<String, Vec<u8>>,
-}
-
-impl Default for AudioEngine {
-    fn default() -> Self {
-        Self {
-            _stream: None,
-            handle: None,
-            sounds: HashMap::new(),
-        }
-    }
 }
 
 impl AudioEngine {

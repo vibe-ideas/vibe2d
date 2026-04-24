@@ -65,8 +65,12 @@ async fn main() -> Result<()> {
             params,
             addr,
         } => {
+            // Try to parse the user-supplied `params` as JSON; fall back to
+            // wrapping the raw string so `vibe rpc foo hello` still works.
+            // `unwrap_or` is fine here because the fallback value is already
+            // owned — no allocation to defer.
             let params: serde_json::Value = serde_json::from_str(&params)
-                .unwrap_or_else(|_| serde_json::Value::String(params));
+                .unwrap_or(serde_json::Value::String(params));
             let result = vdp_call(&addr, &method, params).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
@@ -93,7 +97,11 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn vdp_call(addr: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+async fn vdp_call(
+    addr: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value> {
     let (ws_stream, _) = tokio_tungstenite::connect_async(addr).await?;
     let (mut write, mut read) = ws_stream.split();
 
@@ -196,6 +204,9 @@ fn main() {
 "#,
     )?;
 
-    println!("Created project '{}'. Run with: cd {} && cargo run", name, name);
+    println!(
+        "Created project '{}'. Run with: cd {} && cargo run",
+        name, name
+    );
     Ok(())
 }

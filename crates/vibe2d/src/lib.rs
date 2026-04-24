@@ -8,13 +8,13 @@ pub mod prelude {
     pub use crate::context::Context;
     pub use crate::game::Game;
     pub use crate::screen::Screen;
-    pub use crate::{run, Color};
+    pub use crate::{Color, run};
     pub use glam::Vec2;
     pub use vibe_input::InputState;
     pub use vibe_render::TextureId;
     pub use vibe_ui::{
-        Anchor, ButtonStyle, LayoutDirection, PanelStyle, ScrollListStyle, Style,
-        TextInputStyle, UiColor, UiContext, UiOutput,
+        Anchor, ButtonStyle, LayoutDirection, PanelStyle, ScrollListStyle, Style, TextInputStyle,
+        UiColor, UiContext, UiOutput,
     };
 }
 
@@ -33,8 +33,18 @@ pub struct Color {
 }
 
 impl Color {
-    pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-    pub const BLACK: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
 
     pub fn from_hex(hex: u32) -> Self {
         let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
@@ -78,17 +88,17 @@ pub fn run<G: Game + 'static>(config_path: &str) {
     // Resolve config path: falls back to CARGO_MANIFEST_DIR when running
     // from the workspace root (e.g. `cargo run -p mari0`).
     let resolved_config_path = GameConfig::resolve_config_path(config_path);
-    let config = GameConfig::load_from_path(&resolved_config_path)
-        .expect("Failed to load game config");
+    let config =
+        GameConfig::load_from_path(&resolved_config_path).expect("Failed to load game config");
 
-    let virtual_width = config.virtual_resolution.as_ref().map_or(
-        config.window.width as f32,
-        |vr| vr.width as f32,
-    );
-    let virtual_height = config.virtual_resolution.as_ref().map_or(
-        config.window.height as f32,
-        |vr| vr.height as f32,
-    );
+    let virtual_width = config
+        .virtual_resolution
+        .as_ref()
+        .map_or(config.window.width as f32, |vr| vr.width as f32);
+    let virtual_height = config
+        .virtual_resolution
+        .as_ref()
+        .map_or(config.window.height as f32, |vr| vr.height as f32);
 
     let platform_config = vibe_platform::PlatformConfig {
         window_width: config.window.width,
@@ -171,8 +181,7 @@ pub fn run<G: Game + 'static>(config_path: &str) {
         vdp_skip_render: false,
     };
 
-    vibe_platform::run_desktop(platform_config, bridge, input_state)
-        .expect("Game loop failed");
+    vibe_platform::run_desktop(platform_config, bridge, input_state).expect("Game loop failed");
 }
 
 use std::path::PathBuf;
@@ -219,22 +228,30 @@ struct GameBridge<G: Game> {
 
 impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
     fn on_init(&mut self, renderer: &vibe_render::Renderer) {
-        if let Some(ref tex_configs) = self.config.assets.as_ref().and_then(|a| a.textures.as_ref()) {
-            if let Err(e) = self.assets.load_textures(renderer, &self.base_path, tex_configs) {
-                tracing::error!("Failed to load textures: {}", e);
-            }
+        if let Some(tex_configs) = self
+            .config
+            .assets
+            .as_ref()
+            .and_then(|a| a.textures.as_ref())
+            && let Err(e) = self
+                .assets
+                .load_textures(renderer, &self.base_path, tex_configs)
+        {
+            tracing::error!("Failed to load textures: {}", e);
         }
 
-        if let Some(ref font_configs) = self.config.assets.as_ref().and_then(|a| a.fonts.as_ref()) {
-            if let Err(e) = self.assets.load_fonts(renderer, &self.base_path, font_configs) {
-                tracing::error!("Failed to load fonts: {}", e);
-            }
+        if let Some(font_configs) = self.config.assets.as_ref().and_then(|a| a.fonts.as_ref())
+            && let Err(e) = self
+                .assets
+                .load_fonts(renderer, &self.base_path, font_configs)
+        {
+            tracing::error!("Failed to load fonts: {}", e);
         }
 
-        if let Some(ref audio_configs) = self.config.assets.as_ref().and_then(|a| a.audio.as_ref()) {
-            if let Err(e) = self.audio.load_sounds(&self.base_path, audio_configs) {
-                tracing::error!("Failed to load audio: {}", e);
-            }
+        if let Some(audio_configs) = self.config.assets.as_ref().and_then(|a| a.audio.as_ref())
+            && let Err(e) = self.audio.load_sounds(&self.base_path, audio_configs)
+        {
+            tracing::error!("Failed to load audio: {}", e);
         }
 
         // Create the built-in 1×1 white pixel texture for UI rendering
@@ -262,7 +279,7 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
     fn should_suppress_input(&self) -> bool {
         self.vdp
             .as_ref()
-            .map_or(false, |vdp| vdp.is_client_connected())
+            .is_some_and(|vdp| vdp.is_client_connected())
     }
 
     fn on_update(&mut self, dt: f32, input: &mut vibe_input::InputState) {
@@ -322,55 +339,58 @@ impl<G: Game> vibe_platform::PlatformCallbacks for GameBridge<G> {
                     serde_json::Value::Null
                 };
                 if let Some(vdp) = &self.vdp {
-                    let _ = vdp.sender.send(vibe_debug::VdpResponse::success(pending.id, result));
+                    let _ = vdp
+                        .sender
+                        .send(vibe_debug::VdpResponse::success(pending.id, result));
                 }
 
                 self.last_dt = dt;
                 (false, 0.0) // skip normal update
             } else {
+                // 3. Determine if game.update will run this frame
+                let will_update = !self.paused || self.step_frames > 0;
 
-            // 3. Determine if game.update will run this frame
-            let will_update = !self.paused || self.step_frames > 0;
-
-            // 4. If updating, inject simulated inputs
-            if will_update {
-                for sim in self.pending_simulated.drain(..) {
-                    match sim {
-                        SimulatedInput::KeyPress(k) => input.on_key_pressed(k),
-                        SimulatedInput::KeyRelease(k) => input.on_key_released(k),
-                        SimulatedInput::KeyTap(k) => {
-                            input.on_key_pressed(k);
-                            self.pending_key_auto_releases.push(k);
-                        }
-                        SimulatedInput::MouseMove(x, y) => input.on_mouse_moved(x, y),
-                        SimulatedInput::MouseButtonPress(b) => input.on_mouse_button_pressed(b),
-                        SimulatedInput::MouseButtonRelease(b) => input.on_mouse_button_released(b),
-                        SimulatedInput::MouseButtonClick(b) => {
-                            input.on_mouse_button_pressed(b);
-                            self.pending_mouse_auto_releases.push(b);
+                // 4. If updating, inject simulated inputs
+                if will_update {
+                    for sim in self.pending_simulated.drain(..) {
+                        match sim {
+                            SimulatedInput::KeyPress(k) => input.on_key_pressed(k),
+                            SimulatedInput::KeyRelease(k) => input.on_key_released(k),
+                            SimulatedInput::KeyTap(k) => {
+                                input.on_key_pressed(k);
+                                self.pending_key_auto_releases.push(k);
+                            }
+                            SimulatedInput::MouseMove(x, y) => input.on_mouse_moved(x, y),
+                            SimulatedInput::MouseButtonPress(b) => input.on_mouse_button_pressed(b),
+                            SimulatedInput::MouseButtonRelease(b) => {
+                                input.on_mouse_button_released(b)
+                            }
+                            SimulatedInput::MouseButtonClick(b) => {
+                                input.on_mouse_button_pressed(b);
+                                self.pending_mouse_auto_releases.push(b);
+                            }
                         }
                     }
                 }
-            }
 
-            // 5. Compute effective dt
-            let effective_dt = if will_update {
-                if self.paused {
-                    self.step_frames -= 1;
-                    1.0 / 60.0
-                } else if self.resume_next_frame {
-                    self.resume_next_frame = false;
-                    1.0 / 60.0
+                // 5. Compute effective dt
+                let effective_dt = if will_update {
+                    if self.paused {
+                        self.step_frames -= 1;
+                        1.0 / 60.0
+                    } else if self.resume_next_frame {
+                        self.resume_next_frame = false;
+                        1.0 / 60.0
+                    } else {
+                        dt
+                    }
                 } else {
-                    dt
-                }
-            } else {
-                0.0
-            };
+                    0.0
+                };
 
-            self.last_dt = dt;
+                self.last_dt = dt;
 
-            (will_update, effective_dt)
+                (will_update, effective_dt)
             } // else (normal path)
         };
 
@@ -466,12 +486,16 @@ impl<G: Game> GameBridge<G> {
                 if !self.paused {
                     if let Some(vdp) = &self.vdp {
                         let _ = vdp.sender.send(vibe_debug::VdpResponse::error(
-                            req.id.clone(), -32000, "Game is not paused",
+                            req.id.clone(),
+                            -32000,
+                            "Game is not paused",
                         ));
                     }
                     continue;
                 }
-                let frames = req.params.get("frames")
+                let frames = req
+                    .params
+                    .get("frames")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(1) as u32;
                 // Parse optional embedded inputs
@@ -497,17 +521,15 @@ impl<G: Game> GameBridge<G> {
     fn handle_vdp_request(&mut self, req: &vibe_debug::VdpRequest) -> vibe_debug::VdpResponse {
         match req.method.as_str() {
             // ── Engine built-in methods ──
-            "engine.info" => {
-                vibe_debug::VdpResponse::success(
-                    req.id.clone(),
-                    serde_json::json!({
-                        "engine": "vibe2d",
-                        "version": env!("CARGO_PKG_VERSION"),
-                        "virtual_width": self.virtual_width,
-                        "virtual_height": self.virtual_height,
-                    }),
-                )
-            }
+            "engine.info" => vibe_debug::VdpResponse::success(
+                req.id.clone(),
+                serde_json::json!({
+                    "engine": "vibe2d",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "virtual_width": self.virtual_width,
+                    "virtual_height": self.virtual_height,
+                }),
+            ),
 
             "engine.pause" => {
                 self.paused = true;
@@ -537,10 +559,14 @@ impl<G: Game> GameBridge<G> {
             "engine.step" => {
                 if !self.paused {
                     return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32000, "Game is not paused",
+                        req.id.clone(),
+                        -32000,
+                        "Game is not paused",
                     );
                 }
-                let frames = req.params.get("frames")
+                let frames = req
+                    .params
+                    .get("frames")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(1)
                     .max(1) as u32;
@@ -554,29 +580,29 @@ impl<G: Game> GameBridge<G> {
                 )
             }
 
-            "engine.getTime" => {
-                vibe_debug::VdpResponse::success(
-                    req.id.clone(),
-                    serde_json::json!({
-                        "frame_count": self.frame_count,
-                        "elapsed_time": self.elapsed_time,
-                        "dt": self.last_dt,
-                        "paused": self.paused,
-                        "step_frames_remaining": self.step_frames,
-                    }),
-                )
-            }
+            "engine.getTime" => vibe_debug::VdpResponse::success(
+                req.id.clone(),
+                serde_json::json!({
+                    "frame_count": self.frame_count,
+                    "elapsed_time": self.elapsed_time,
+                    "dt": self.last_dt,
+                    "paused": self.paused,
+                    "step_frames_remaining": self.step_frames,
+                }),
+            ),
 
-            "engine.simulateInput" => {
-                self.handle_simulate_input(req)
-            }
+            "engine.simulateInput" => self.handle_simulate_input(req),
 
             "engine.simulateInputBatch" => {
                 let inputs = match req.params.get("inputs").and_then(|v| v.as_array()) {
                     Some(arr) => arr,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'inputs' array parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'inputs' array parameter",
+                        );
+                    }
                 };
                 let count = inputs.len();
                 for input_val in inputs {
@@ -589,7 +615,9 @@ impl<G: Game> GameBridge<G> {
             }
 
             "engine.setRendering" => {
-                let enabled = req.params.get("enabled")
+                let enabled = req
+                    .params
+                    .get("enabled")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 self.vdp_skip_render = !enabled;
@@ -609,7 +637,9 @@ impl<G: Game> GameBridge<G> {
             }
 
             "game.screenshot" => {
-                let path = req.params.get("path")
+                let path = req
+                    .params
+                    .get("path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("screenshot.png")
                     .to_string();
@@ -636,9 +666,13 @@ impl<G: Game> GameBridge<G> {
             "ui.click" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
                 self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::Click {
                     id: vibe_ui::WidgetId::new(widget_id),
@@ -652,20 +686,29 @@ impl<G: Game> GameBridge<G> {
             "ui.setText" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
                 let text = match req.params.get("text").and_then(|v| v.as_str()) {
                     Some(t) => t.to_string(),
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'text' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'text' parameter",
+                        );
+                    }
                 };
-                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::SetText {
-                    id: vibe_ui::WidgetId::new(widget_id),
-                    text: text.clone(),
-                });
+                self.ui_state
+                    .push_vdp_action(vibe_ui::VdpUiAction::SetText {
+                        id: vibe_ui::WidgetId::new(widget_id),
+                        text: text.clone(),
+                    });
                 vibe_debug::VdpResponse::success(
                     req.id.clone(),
                     serde_json::json!({ "queued": true, "action": "setText", "id": widget_id, "text": text }),
@@ -675,9 +718,13 @@ impl<G: Game> GameBridge<G> {
             "ui.submit" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
                 self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::Submit {
                     id: vibe_ui::WidgetId::new(widget_id),
@@ -691,13 +738,18 @@ impl<G: Game> GameBridge<G> {
             "ui.setFocus" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
-                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::SetFocus {
-                    id: vibe_ui::WidgetId::new(widget_id),
-                });
+                self.ui_state
+                    .push_vdp_action(vibe_ui::VdpUiAction::SetFocus {
+                        id: vibe_ui::WidgetId::new(widget_id),
+                    });
                 vibe_debug::VdpResponse::success(
                     req.id.clone(),
                     serde_json::json!({ "queued": true, "action": "setFocus", "id": widget_id }),
@@ -705,7 +757,8 @@ impl<G: Game> GameBridge<G> {
             }
 
             "ui.clearFocus" => {
-                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::ClearFocus);
+                self.ui_state
+                    .push_vdp_action(vibe_ui::VdpUiAction::ClearFocus);
                 vibe_debug::VdpResponse::success(
                     req.id.clone(),
                     serde_json::json!({ "queued": true, "action": "clearFocus" }),
@@ -715,11 +768,17 @@ impl<G: Game> GameBridge<G> {
             "ui.scroll" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
-                let offset = req.params.get("offset")
+                let offset = req
+                    .params
+                    .get("offset")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0) as f32;
                 self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::Scroll {
@@ -735,17 +794,24 @@ impl<G: Game> GameBridge<G> {
             "ui.scrollHorizontal" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
-                let offset = req.params.get("offset")
+                let offset = req
+                    .params
+                    .get("offset")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.0) as f32;
-                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::ScrollHorizontal {
-                    id: vibe_ui::WidgetId::new(widget_id),
-                    offset,
-                });
+                self.ui_state
+                    .push_vdp_action(vibe_ui::VdpUiAction::ScrollHorizontal {
+                        id: vibe_ui::WidgetId::new(widget_id),
+                        offset,
+                    });
                 vibe_debug::VdpResponse::success(
                     req.id.clone(),
                     serde_json::json!({ "queued": true, "action": "scrollHorizontal", "id": widget_id, "offset": offset }),
@@ -755,13 +821,18 @@ impl<G: Game> GameBridge<G> {
             "ui.scrollToBottom" => {
                 let widget_id = match req.params.get("id").and_then(|v| v.as_str()) {
                     Some(id) => id,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'id' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'id' parameter",
+                        );
+                    }
                 };
-                self.ui_state.push_vdp_action(vibe_ui::VdpUiAction::ScrollToBottom {
-                    id: vibe_ui::WidgetId::new(widget_id),
-                });
+                self.ui_state
+                    .push_vdp_action(vibe_ui::VdpUiAction::ScrollToBottom {
+                        id: vibe_ui::WidgetId::new(widget_id),
+                    });
                 vibe_debug::VdpResponse::success(
                     req.id.clone(),
                     serde_json::json!({ "queued": true, "action": "scrollToBottom", "id": widget_id }),
@@ -783,38 +854,55 @@ impl<G: Game> GameBridge<G> {
     }
 
     fn handle_simulate_input(&mut self, req: &vibe_debug::VdpRequest) -> vibe_debug::VdpResponse {
-        let device = req.params.get("device")
+        let device = req
+            .params
+            .get("device")
             .and_then(|v| v.as_str())
             .unwrap_or("keyboard");
         let action = match req.params.get("action").and_then(|v| v.as_str()) {
             Some(a) => a,
-            None => return vibe_debug::VdpResponse::error(
-                req.id.clone(), -32602, "Missing 'action' parameter",
-            ),
+            None => {
+                return vibe_debug::VdpResponse::error(
+                    req.id.clone(),
+                    -32602,
+                    "Missing 'action' parameter",
+                );
+            }
         };
 
         match device {
             "keyboard" => {
                 let key_name = match req.params.get("key").and_then(|v| v.as_str()) {
                     Some(k) => k,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, "Missing 'key' parameter",
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            "Missing 'key' parameter",
+                        );
+                    }
                 };
                 let keycode = match vibe_input::string_to_keycode(key_name) {
                     Some(k) => k,
-                    None => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602, format!("Unknown key: {}", key_name),
-                    ),
+                    None => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            format!("Unknown key: {}", key_name),
+                        );
+                    }
                 };
                 let sim = match action {
                     "press" => SimulatedInput::KeyPress(keycode),
                     "release" => SimulatedInput::KeyRelease(keycode),
                     "tap" => SimulatedInput::KeyTap(keycode),
-                    _ => return vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602,
-                        format!("Unknown keyboard action: {}", action),
-                    ),
+                    _ => {
+                        return vibe_debug::VdpResponse::error(
+                            req.id.clone(),
+                            -32602,
+                            format!("Unknown keyboard action: {}", action),
+                        );
+                    }
                 };
                 self.pending_simulated.push(sim);
                 vibe_debug::VdpResponse::success(
@@ -826,79 +914,91 @@ impl<G: Game> GameBridge<G> {
                 )
             }
 
-            "mouse" => {
-                match action {
-                    "move" => {
-                        let x = match req.params.get("x").and_then(|v| v.as_f64()) {
-                            Some(v) => v as f32,
-                            None => return vibe_debug::VdpResponse::error(
-                                req.id.clone(), -32602, "Missing 'x' parameter",
-                            ),
-                        };
-                        let y = match req.params.get("y").and_then(|v| v.as_f64()) {
-                            Some(v) => v as f32,
-                            None => return vibe_debug::VdpResponse::error(
-                                req.id.clone(), -32602, "Missing 'y' parameter",
-                            ),
-                        };
-                        self.pending_simulated.push(SimulatedInput::MouseMove(x, y));
-                        vibe_debug::VdpResponse::success(
-                            req.id.clone(),
-                            serde_json::json!({
-                                "device": "mouse", "action": "move",
-                                "x": x, "y": y, "queued": true,
-                            }),
-                        )
-                    }
-                    "press" | "release" | "click" => {
-                        let btn_name = match req.params.get("button").and_then(|v| v.as_str()) {
-                            Some(b) => b,
-                            None => return vibe_debug::VdpResponse::error(
-                                req.id.clone(), -32602, "Missing 'button' parameter",
-                            ),
-                        };
-                        let button = match vibe_input::string_to_mouse_button(btn_name) {
-                            Some(b) => b,
-                            None => return vibe_debug::VdpResponse::error(
-                                req.id.clone(), -32602,
-                                format!("Unknown mouse button: {}", btn_name),
-                            ),
-                        };
-                        let sim = match action {
-                            "press" => SimulatedInput::MouseButtonPress(button),
-                            "release" => SimulatedInput::MouseButtonRelease(button),
-                            "click" => SimulatedInput::MouseButtonClick(button),
-                            _ => unreachable!(),
-                        };
-                        self.pending_simulated.push(sim);
-                        vibe_debug::VdpResponse::success(
-                            req.id.clone(),
-                            serde_json::json!({
-                                "device": "mouse", "action": action,
-                                "button": btn_name, "queued": true,
-                            }),
-                        )
-                    }
-                    _ => vibe_debug::VdpResponse::error(
-                        req.id.clone(), -32602,
-                        format!("Unknown mouse action: {}", action),
-                    ),
+            "mouse" => match action {
+                "move" => {
+                    let x = match req.params.get("x").and_then(|v| v.as_f64()) {
+                        Some(v) => v as f32,
+                        None => {
+                            return vibe_debug::VdpResponse::error(
+                                req.id.clone(),
+                                -32602,
+                                "Missing 'x' parameter",
+                            );
+                        }
+                    };
+                    let y = match req.params.get("y").and_then(|v| v.as_f64()) {
+                        Some(v) => v as f32,
+                        None => {
+                            return vibe_debug::VdpResponse::error(
+                                req.id.clone(),
+                                -32602,
+                                "Missing 'y' parameter",
+                            );
+                        }
+                    };
+                    self.pending_simulated.push(SimulatedInput::MouseMove(x, y));
+                    vibe_debug::VdpResponse::success(
+                        req.id.clone(),
+                        serde_json::json!({
+                            "device": "mouse", "action": "move",
+                            "x": x, "y": y, "queued": true,
+                        }),
+                    )
                 }
-            }
+                "press" | "release" | "click" => {
+                    let btn_name = match req.params.get("button").and_then(|v| v.as_str()) {
+                        Some(b) => b,
+                        None => {
+                            return vibe_debug::VdpResponse::error(
+                                req.id.clone(),
+                                -32602,
+                                "Missing 'button' parameter",
+                            );
+                        }
+                    };
+                    let button = match vibe_input::string_to_mouse_button(btn_name) {
+                        Some(b) => b,
+                        None => {
+                            return vibe_debug::VdpResponse::error(
+                                req.id.clone(),
+                                -32602,
+                                format!("Unknown mouse button: {}", btn_name),
+                            );
+                        }
+                    };
+                    let sim = match action {
+                        "press" => SimulatedInput::MouseButtonPress(button),
+                        "release" => SimulatedInput::MouseButtonRelease(button),
+                        "click" => SimulatedInput::MouseButtonClick(button),
+                        _ => unreachable!(),
+                    };
+                    self.pending_simulated.push(sim);
+                    vibe_debug::VdpResponse::success(
+                        req.id.clone(),
+                        serde_json::json!({
+                            "device": "mouse", "action": action,
+                            "button": btn_name, "queued": true,
+                        }),
+                    )
+                }
+                _ => vibe_debug::VdpResponse::error(
+                    req.id.clone(),
+                    -32602,
+                    format!("Unknown mouse action: {}", action),
+                ),
+            },
 
-            "gamepad" => {
-                vibe_debug::VdpResponse::error(
-                    req.id.clone(), -32000,
-                    "Gamepad simulation not yet supported",
-                )
-            }
+            "gamepad" => vibe_debug::VdpResponse::error(
+                req.id.clone(),
+                -32000,
+                "Gamepad simulation not yet supported",
+            ),
 
-            _ => {
-                vibe_debug::VdpResponse::error(
-                    req.id.clone(), -32602,
-                    format!("Unknown device: {}", device),
-                )
-            }
+            _ => vibe_debug::VdpResponse::error(
+                req.id.clone(),
+                -32602,
+                format!("Unknown device: {}", device),
+            ),
         }
     }
 
@@ -925,7 +1025,10 @@ impl<G: Game> GameBridge<G> {
 
     /// Parse a single input JSON object and queue it as a SimulatedInput.
     fn parse_and_queue_input(&mut self, val: &serde_json::Value) {
-        let device = val.get("device").and_then(|v| v.as_str()).unwrap_or("keyboard");
+        let device = val
+            .get("device")
+            .and_then(|v| v.as_str())
+            .unwrap_or("keyboard");
         let action = match val.get("action").and_then(|v| v.as_str()) {
             Some(a) => a,
             None => return,
@@ -948,32 +1051,31 @@ impl<G: Game> GameBridge<G> {
                 };
                 self.pending_simulated.push(sim);
             }
-            "mouse" => {
-                match action {
-                    "move" => {
-                        if let (Some(x), Some(y)) = (
-                            val.get("x").and_then(|v| v.as_f64()),
-                            val.get("y").and_then(|v| v.as_f64()),
-                        ) {
-                            self.pending_simulated.push(SimulatedInput::MouseMove(x as f32, y as f32));
-                        }
+            "mouse" => match action {
+                "move" => {
+                    if let (Some(x), Some(y)) = (
+                        val.get("x").and_then(|v| v.as_f64()),
+                        val.get("y").and_then(|v| v.as_f64()),
+                    ) {
+                        self.pending_simulated
+                            .push(SimulatedInput::MouseMove(x as f32, y as f32));
                     }
-                    "press" | "release" | "click" => {
-                        if let Some(btn_name) = val.get("button").and_then(|v| v.as_str()) {
-                            if let Some(button) = vibe_input::string_to_mouse_button(btn_name) {
-                                let sim = match action {
-                                    "press" => SimulatedInput::MouseButtonPress(button),
-                                    "release" => SimulatedInput::MouseButtonRelease(button),
-                                    "click" => SimulatedInput::MouseButtonClick(button),
-                                    _ => return,
-                                };
-                                self.pending_simulated.push(sim);
-                            }
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                "press" | "release" | "click" => {
+                    if let Some(btn_name) = val.get("button").and_then(|v| v.as_str())
+                        && let Some(button) = vibe_input::string_to_mouse_button(btn_name)
+                    {
+                        let sim = match action {
+                            "press" => SimulatedInput::MouseButtonPress(button),
+                            "release" => SimulatedInput::MouseButtonRelease(button),
+                            "click" => SimulatedInput::MouseButtonClick(button),
+                            _ => return,
+                        };
+                        self.pending_simulated.push(sim);
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         }
     }

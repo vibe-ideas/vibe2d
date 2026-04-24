@@ -1,5 +1,5 @@
-use vibe_render::{Font, Renderer, TextureId};
 use crate::Color;
+use vibe_render::{Font, Renderer, TextureId};
 
 /// The render target for the current frame. Users draw to this.
 pub struct Screen<'a> {

@@ -4,22 +4,12 @@ use std::path::Path;
 use anyhow::Result;
 use vibe_render::{Font, Renderer, Texture, TextureId};
 
-
 /// Manages loaded game assets (textures, fonts, audio).
+#[derive(Default)]
 pub struct AssetManager {
     textures: Vec<Texture>,
     texture_names: HashMap<String, TextureId>,
     fonts: HashMap<String, Font>,
-}
-
-impl Default for AssetManager {
-    fn default() -> Self {
-        Self {
-            textures: Vec::new(),
-            texture_names: HashMap::new(),
-            fonts: HashMap::new(),
-        }
-    }
 }
 
 impl AssetManager {
@@ -36,8 +26,14 @@ impl AssetManager {
     ) -> Result<()> {
         for (name, rel_path) in texture_configs {
             let full_path = base_path.join(rel_path);
-            let bytes = std::fs::read(&full_path)
-                .map_err(|e| anyhow::anyhow!("Failed to load texture '{}' from {:?}: {}", name, full_path, e))?;
+            let bytes = std::fs::read(&full_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to load texture '{}' from {:?}: {}",
+                    name,
+                    full_path,
+                    e
+                )
+            })?;
 
             let texture = Texture::from_bytes(
                 &renderer.device,
@@ -84,16 +80,18 @@ impl AssetManager {
     ) -> Result<()> {
         for (name, config_str) in font_configs {
             // Format: "path/to/font.ttf:32" (path:size)
-            let (rel_path, size_str) = config_str
-                .rsplit_once(':')
-                .ok_or_else(|| anyhow::anyhow!("Font config '{}' must be 'path:size'", config_str))?;
+            let (rel_path, size_str) = config_str.rsplit_once(':').ok_or_else(|| {
+                anyhow::anyhow!("Font config '{}' must be 'path:size'", config_str)
+            })?;
 
-            let font_size: f32 = size_str.parse()
+            let font_size: f32 = size_str
+                .parse()
                 .map_err(|_| anyhow::anyhow!("Invalid font size '{}' for '{}'", size_str, name))?;
 
             let full_path = base_path.join(rel_path);
-            let bytes = std::fs::read(&full_path)
-                .map_err(|e| anyhow::anyhow!("Failed to load font '{}' from {:?}: {}", name, full_path, e))?;
+            let bytes = std::fs::read(&full_path).map_err(|e| {
+                anyhow::anyhow!("Failed to load font '{}' from {:?}: {}", name, full_path, e)
+            })?;
 
             let texture_id = TextureId(self.textures.len());
             let (font, atlas_texture) = Font::from_bytes(

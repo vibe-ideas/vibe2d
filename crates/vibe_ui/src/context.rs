@@ -2,7 +2,7 @@ use vibe_input::InputState;
 use vibe_render::{DrawCommand, Font, TextureId};
 
 use crate::id::WidgetId;
-use crate::layout::{anchor_origin, Anchor, LayoutDirection};
+use crate::layout::{Anchor, LayoutDirection, anchor_origin};
 use crate::response::{Response, ScrollListResponse, TextInputResponse};
 use crate::state::{ScrollbarDrag, UiState};
 use crate::style::{ButtonStyle, PanelStyle, Style, UiColor};
@@ -155,18 +155,19 @@ impl<'a> UiContext<'a> {
 
     fn hit_test(&self, rect: [f32; 4]) -> bool {
         let [x, y, w, h] = rect;
-        self.mouse_x >= x
-            && self.mouse_x <= x + w
-            && self.mouse_y >= y
-            && self.mouse_y <= y + h
+        self.mouse_x >= x && self.mouse_x <= x + w && self.mouse_y >= y && self.mouse_y <= y + h
     }
 
     fn has_vdp_click(&self, id: &WidgetId) -> bool {
-        self.vdp_actions.iter().any(|a| matches!(a, VdpUiAction::Click { id: click_id } if click_id == id))
+        self.vdp_actions
+            .iter()
+            .any(|a| matches!(a, VdpUiAction::Click { id: click_id } if click_id == id))
     }
 
     fn has_vdp_submit(&self, id: &WidgetId) -> bool {
-        self.vdp_actions.iter().any(|a| matches!(a, VdpUiAction::Submit { id: submit_id } if submit_id == id))
+        self.vdp_actions
+            .iter()
+            .any(|a| matches!(a, VdpUiAction::Submit { id: submit_id } if submit_id == id))
     }
 
     fn advance_cursor(&mut self, width: f32, height: f32) {
@@ -582,12 +583,11 @@ impl<'a> UiContext<'a> {
                 id: action_id,
                 text,
             } = action
+                && action_id == &id
             {
-                if action_id == &id {
-                    let state = self.ui_state.text_input_state(&id);
-                    state.text = text.clone();
-                    state.cursor_position = text.len();
-                }
+                let state = self.ui_state.text_input_state(&id);
+                state.text = text.clone();
+                state.cursor_position = text.len();
             }
         }
 
@@ -680,10 +680,10 @@ impl<'a> UiContext<'a> {
 
         // Check VDP focus
         for action in &self.vdp_actions {
-            if let VdpUiAction::SetFocus { id: focus_id } = action {
-                if focus_id == &id {
-                    self.ui_state.focused = Some(id.clone());
-                }
+            if let VdpUiAction::SetFocus { id: focus_id } = action
+                && focus_id == &id
+            {
+                self.ui_state.focused = Some(id.clone());
             }
         }
 
@@ -734,7 +734,8 @@ impl<'a> UiContext<'a> {
         // Draw cursor when focused
         if is_focused {
             let elapsed = self.ui_state.elapsed_time;
-            let blink = (elapsed * 2.0) as u64 % 2 == 0;
+            // 2 Hz cursor blink: on for even half-seconds, off for odd.
+            let blink = ((elapsed * 2.0) as u64).is_multiple_of(2);
             if blink {
                 let cursor_text = &display_text[..cursor_position];
                 let cursor_x_offset = font.text_width(cursor_text);
@@ -869,8 +870,8 @@ impl<'a> UiContext<'a> {
                         if track_range > 0.0 {
                             let mouse_delta = self.mouse_y - state.drag_start_mouse;
                             let max_scroll = (state.total_content_height - inner_h).max(0.0);
-                            state.scroll_offset = state.drag_start_offset
-                                + (mouse_delta / track_range) * max_scroll;
+                            state.scroll_offset =
+                                state.drag_start_offset + (mouse_delta / track_range) * max_scroll;
                         }
                     }
                     ScrollbarDrag::Horizontal => {
@@ -880,8 +881,8 @@ impl<'a> UiContext<'a> {
                         if track_range > 0.0 {
                             let mouse_delta = self.mouse_x - state.drag_start_mouse;
                             let max_scroll = (state.total_content_width - inner_w).max(0.0);
-                            state.horizontal_offset = state.drag_start_offset
-                                + (mouse_delta / track_range) * max_scroll;
+                            state.horizontal_offset =
+                                state.drag_start_offset + (mouse_delta / track_range) * max_scroll;
                         }
                     }
                     ScrollbarDrag::None => {}
@@ -1004,7 +1005,12 @@ impl<'a> UiContext<'a> {
 
             // Detect click on vertical scrollbar to start drag
             if self.mouse_just_clicked && current_drag == ScrollbarDrag::None {
-                let sb_rect = [scrollbar_x, scrollbar_y, list_style.scrollbar_width, scrollbar_h];
+                let sb_rect = [
+                    scrollbar_x,
+                    scrollbar_y,
+                    list_style.scrollbar_width,
+                    scrollbar_h,
+                ];
                 if self.hit_test(sb_rect) {
                     let state = self.ui_state.scroll_list_state(&id);
                     state.dragging = ScrollbarDrag::Vertical;
@@ -1015,15 +1021,27 @@ impl<'a> UiContext<'a> {
             }
 
             // Highlight scrollbar when hovered or dragging
-            let is_dragging_v = self.ui_state.scroll_list_state(&id).dragging == ScrollbarDrag::Vertical;
-            let sb_hovered = self.hit_test([scrollbar_x, scrollbar_y, list_style.scrollbar_width, scrollbar_h]);
+            let is_dragging_v =
+                self.ui_state.scroll_list_state(&id).dragging == ScrollbarDrag::Vertical;
+            let sb_hovered = self.hit_test([
+                scrollbar_x,
+                scrollbar_y,
+                list_style.scrollbar_width,
+                scrollbar_h,
+            ]);
             let sb_color = if is_dragging_v || sb_hovered {
                 UiColor::new(0.7, 0.7, 0.7, 0.8)
             } else {
                 list_style.scrollbar_color
             };
 
-            self.draw_rect(scrollbar_x, scrollbar_y, list_style.scrollbar_width, scrollbar_h, sb_color);
+            self.draw_rect(
+                scrollbar_x,
+                scrollbar_y,
+                list_style.scrollbar_width,
+                scrollbar_h,
+                sb_color,
+            );
         }
 
         // Horizontal scrollbar
@@ -1031,11 +1049,17 @@ impl<'a> UiContext<'a> {
             let max_h_scroll = content_total_width - inner_w;
             let scrollbar_w = (inner_w / content_total_width * inner_w).max(8.0);
             let scrollbar_y = draw_y + height - list_style.scrollbar_width - 1.0;
-            let scrollbar_x = inner_x + (horizontal_offset / max_h_scroll) * (inner_w - scrollbar_w);
+            let scrollbar_x =
+                inner_x + (horizontal_offset / max_h_scroll) * (inner_w - scrollbar_w);
 
             // Detect click on horizontal scrollbar to start drag
             if self.mouse_just_clicked && current_drag == ScrollbarDrag::None {
-                let sb_rect = [scrollbar_x, scrollbar_y, scrollbar_w, list_style.scrollbar_width];
+                let sb_rect = [
+                    scrollbar_x,
+                    scrollbar_y,
+                    scrollbar_w,
+                    list_style.scrollbar_width,
+                ];
                 if self.hit_test(sb_rect) {
                     let state = self.ui_state.scroll_list_state(&id);
                     state.dragging = ScrollbarDrag::Horizontal;
@@ -1046,15 +1070,27 @@ impl<'a> UiContext<'a> {
             }
 
             // Highlight scrollbar when hovered or dragging
-            let is_dragging_h = self.ui_state.scroll_list_state(&id).dragging == ScrollbarDrag::Horizontal;
-            let sb_hovered = self.hit_test([scrollbar_x, scrollbar_y, scrollbar_w, list_style.scrollbar_width]);
+            let is_dragging_h =
+                self.ui_state.scroll_list_state(&id).dragging == ScrollbarDrag::Horizontal;
+            let sb_hovered = self.hit_test([
+                scrollbar_x,
+                scrollbar_y,
+                scrollbar_w,
+                list_style.scrollbar_width,
+            ]);
             let sb_color = if is_dragging_h || sb_hovered {
                 UiColor::new(0.7, 0.7, 0.7, 0.8)
             } else {
                 list_style.scrollbar_color
             };
 
-            self.draw_rect(scrollbar_x, scrollbar_y, scrollbar_w, list_style.scrollbar_width, sb_color);
+            self.draw_rect(
+                scrollbar_x,
+                scrollbar_y,
+                scrollbar_w,
+                list_style.scrollbar_width,
+                sb_color,
+            );
         }
 
         let children: Vec<WidgetId> = self.frame_widgets[widgets_before..]

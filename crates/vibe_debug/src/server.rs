@@ -85,7 +85,10 @@ async fn handle_connection(stream: TcpStream, channel: &VdpServerChannel) -> Res
                 channel.sender.send(vdp_req)?;
 
                 // Wait for response from game thread (blocking with timeout)
-                match channel.receiver.recv_timeout(std::time::Duration::from_secs(5)) {
+                match channel
+                    .receiver
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                {
                     Ok(response) => {
                         let json = serde_json::to_string(&response)?;
                         write.send(Message::Text(json.into())).await?;

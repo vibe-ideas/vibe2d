@@ -3,22 +3,22 @@
 // Original game: https://stabyourself.net/mari0/
 // Built with vibe2d engine.
 
-use vibe2d::prelude::*;
 use std::collections::HashMap;
+use vibe2d::prelude::*;
 
 // ── Physics Constants (mari0-inspired, 1 block = 32px) ─────────────
 const TILE_SIZE: f32 = 32.0;
-const GRAVITY: f32 = 2560.0;           // 80 blocks/s^2
-const GRAVITY_JUMPING: f32 = 960.0;    // reduced while holding jump
-const JUMP_VELOCITY: f32 = -512.0;     // initial upward (walking)
+const GRAVITY: f32 = 2560.0; // 80 blocks/s^2
+const GRAVITY_JUMPING: f32 = 960.0; // reduced while holding jump
+const JUMP_VELOCITY: f32 = -512.0; // initial upward (walking)
 const JUMP_VELOCITY_RUN: f32 = -608.0; // higher jump when sprinting (like original SMB)
-const MAX_WALK_SPEED: f32 = 204.8;     // 6.4 blocks/s
-const MAX_RUN_SPEED: f32 = 358.4;      // 11.2 blocks/s (sprint with fire/shift)
-const WALK_ACCEL: f32 = 256.0;         // 8 blocks/s^2
-const RUN_ACCEL: f32 = 512.0;          // 16 blocks/s^2 (sprint, fast acceleration)
-const FRICTION: f32 = 448.0;           // 14 blocks/s^2
-const MAX_Y_SPEED: f32 = 3200.0;       // terminal velocity
-const STOMP_BOUNCE: f32 = -300.0;      // bounce velocity after stomp
+const MAX_WALK_SPEED: f32 = 204.8; // 6.4 blocks/s
+const MAX_RUN_SPEED: f32 = 358.4; // 11.2 blocks/s (sprint with fire/shift)
+const WALK_ACCEL: f32 = 256.0; // 8 blocks/s^2
+const RUN_ACCEL: f32 = 512.0; // 16 blocks/s^2 (sprint, fast acceleration)
+const FRICTION: f32 = 448.0; // 14 blocks/s^2
+const MAX_Y_SPEED: f32 = 3200.0; // terminal velocity
+const STOMP_BOUNCE: f32 = -300.0; // bounce velocity after stomp
 
 // Portal
 const PORTAL_GUN_DELAY: f32 = 0.2;
@@ -30,33 +30,33 @@ const PORTAL_ANIM_FRAMES: u32 = 6;
 const PORTAL_ANIM_DELAY: f32 = 0.08;
 
 // Enemy
-const ENEMY_SPEED: f32 = 64.0;         // 2 blocks/s
-const SHELL_SPEED: f32 = 384.0;        // 12 blocks/s (mari0)
+const ENEMY_SPEED: f32 = 64.0; // 2 blocks/s
+const SHELL_SPEED: f32 = 384.0; // 12 blocks/s (mari0)
 const ENEMY_DEATH_TIME: f32 = 0.5;
 
 // Block interaction
 const BLOCK_BOUNCE_TIME: f32 = 0.2;
-const BLOCK_BOUNCE_HEIGHT: f32 = 0.4 * TILE_SIZE;  // 12.8px
+const BLOCK_BOUNCE_HEIGHT: f32 = 0.4 * TILE_SIZE; // 12.8px
 const COIN_POPUP_TIME: f32 = 0.4;
-const COIN_POPUP_SPEED: f32 = -320.0;  // initial upward velocity
+const COIN_POPUP_SPEED: f32 = -320.0; // initial upward velocity
 const SCORE_POPUP_TIME: f32 = 0.8;
-const SCORE_POPUP_HEIGHT: f32 = 2.5 * TILE_SIZE;   // 80px
+const SCORE_POPUP_HEIGHT: f32 = 2.5 * TILE_SIZE; // 80px
 const MULTI_COIN_TIMEOUT: f32 = 4.0;
 const BRICK_BREAK_SCORE: u32 = 50;
-const DEBRIS_GRAVITY: f32 = 1920.0;    // 60*32
+const DEBRIS_GRAVITY: f32 = 1920.0; // 60*32
 
 // Items (mushroom, star, 1-up)
-const ITEM_POP_TIME: f32 = 0.7;        // time to emerge from block
-const ITEM_SPEED: f32 = 115.2;         // 3.6 blocks/s horizontal
+const ITEM_POP_TIME: f32 = 0.7; // time to emerge from block
+const ITEM_SPEED: f32 = 115.2; // 3.6 blocks/s horizontal
 const ITEM_SCORE: u32 = 1000;
-const STAR_JUMP_FORCE: f32 = -416.0;   // 13 blocks/s upward
+const STAR_JUMP_FORCE: f32 = -416.0; // 13 blocks/s upward
 const STAR_ANIM_DELAY: f32 = 0.04;
-const STAR_DURATION: f32 = 12.0;       // seconds of invincibility
+const STAR_DURATION: f32 = 12.0; // seconds of invincibility
 
 // Fireball (fire flower power-up)
-const FIREBALL_SPEED: f32 = 480.0;     // 15 blocks/s horizontal
-const FIREBALL_BOUNCE: f32 = -320.0;   // 10 blocks/s upward bounce
-const FIREBALL_SIZE: f32 = 16.0;       // 8px * 2 scale
+const FIREBALL_SPEED: f32 = 480.0; // 15 blocks/s horizontal
+const FIREBALL_BOUNCE: f32 = -320.0; // 10 blocks/s upward bounce
+const FIREBALL_SIZE: f32 = 16.0; // 8px * 2 scale
 const FIREBALL_EXPLODE_TIME: f32 = 0.12;
 const FIREBALL_ANIM_DELAY: f32 = 0.04;
 const MAX_FIREBALLS: usize = 2;
@@ -75,8 +75,8 @@ const PLAYER_BIG_H: f32 = 64.0;
 const MARIO_SPRITE_SCALE: f32 = 2.0;
 const MARIO_SMALL_SPRITE_W: f32 = 20.0 * MARIO_SPRITE_SCALE; // 40
 const MARIO_SMALL_SPRITE_H: f32 = 20.0 * MARIO_SPRITE_SCALE; // 40
-const MARIO_BIG_SPRITE_W: f32 = 20.0 * MARIO_SPRITE_SCALE;   // 40
-const MARIO_BIG_SPRITE_H: f32 = 36.0 * MARIO_SPRITE_SCALE;   // 72
+const MARIO_BIG_SPRITE_W: f32 = 20.0 * MARIO_SPRITE_SCALE; // 40
+const MARIO_BIG_SPRITE_H: f32 = 36.0 * MARIO_SPRITE_SCALE; // 72
 
 // ── SMB Tileset IDs (smbtiles.png: 374×102, 22×6 grid, 17×17 cells) ──
 // Tile 1 = empty sky. All other IDs map directly to smbtiles.png cells.
@@ -107,27 +107,52 @@ fn srgb_to_linear(c: f32) -> f32 {
 fn smb_tile_uv(tile_id: u32) -> [f32; 4] {
     let col = ((tile_id - 1) % 22) as f32;
     let row = ((tile_id - 1) / 22) as f32;
-    [col * 17.0 / 374.0, row * 17.0 / 102.0, 16.0 / 374.0, 16.0 / 102.0]
+    [
+        col * 17.0 / 374.0,
+        row * 17.0 / 102.0,
+        16.0 / 374.0,
+        16.0 / 102.0,
+    ]
 }
 
 /// Get UV rect for a mario animation frame (512×128, 20×20 cells)
 fn mario_uv(col: u32, row: u32) -> [f32; 4] {
-    [(col * 20) as f32 / 512.0, (row * 20) as f32 / 128.0, 20.0 / 512.0, 20.0 / 128.0]
+    [
+        (col * 20) as f32 / 512.0,
+        (row * 20) as f32 / 128.0,
+        20.0 / 512.0,
+        20.0 / 128.0,
+    ]
 }
 
 /// Get UV rect for a big mario animation frame (512×256, 20×36 cells)
 fn mario_big_uv(col: u32, row: u32) -> [f32; 4] {
-    [(col * 20) as f32 / 512.0, (row * 36) as f32 / 256.0, 20.0 / 512.0, 36.0 / 256.0]
+    [
+        (col * 20) as f32 / 512.0,
+        (row * 36) as f32 / 256.0,
+        20.0 / 512.0,
+        36.0 / 256.0,
+    ]
 }
 
 /// Get UV rect for goomba frame (32×64, 16×16 cells)
 fn goomba_uv(col: u32, row: u32) -> [f32; 4] {
-    [(col * 16) as f32 / 32.0, (row * 16) as f32 / 64.0, 16.0 / 32.0, 16.0 / 64.0]
+    [
+        (col * 16) as f32 / 32.0,
+        (row * 16) as f32 / 64.0,
+        16.0 / 32.0,
+        16.0 / 64.0,
+    ]
 }
 
 /// Get UV rect for koopa frame (128×128, 16×24 cells)
 fn koopa_uv(col: u32, row: u32) -> [f32; 4] {
-    [(col * 16) as f32 / 128.0, (row * 24) as f32 / 128.0, 16.0 / 128.0, 24.0 / 128.0]
+    [
+        (col * 16) as f32 / 128.0,
+        (row * 24) as f32 / 128.0,
+        16.0 / 128.0,
+        24.0 / 128.0,
+    ]
 }
 
 /// Get UV rect for coin animation frame (16×32, 2 vertical frames)
@@ -137,7 +162,12 @@ fn coin_frame_uv(frame: u32) -> [f32; 4] {
 
 /// Get UV rect for entity in entities.png (170×170, 17px cells, 16px sprites)
 fn entity_uv(col: u32, row: u32) -> [f32; 4] {
-    [(col * 17) as f32 / 170.0, (row * 17) as f32 / 170.0, 16.0 / 170.0, 16.0 / 170.0]
+    [
+        (col * 17) as f32 / 170.0,
+        (row * 17) as f32 / 170.0,
+        16.0 / 170.0,
+        16.0 / 170.0,
+    ]
 }
 
 /// Get UV rect for star frame in star.png (64×16, 4 frames)
@@ -163,24 +193,50 @@ fn fireball_explode_uv(frame: u32) -> [f32; 4] {
 // ── Enums & Structs ────────────────────────────────────────────────
 
 #[derive(PartialEq, Clone, Copy)]
-enum GameState { Menu, Playing, Dead, LevelComplete }
+enum GameState {
+    Menu,
+    Playing,
+    Dead,
+    LevelComplete,
+}
 
 #[derive(PartialEq, Clone, Copy)]
-enum PlayerAnim { Idle, Run, Jump, Fall }
+enum PlayerAnim {
+    Idle,
+    Run,
+    Jump,
+    Fall,
+}
 
 #[derive(PartialEq, Clone, Copy)]
-enum Orientation { Up, Down, Left, Right }
+enum Orientation {
+    Up,
+    Down,
+    Left,
+    Right,
+}
 
 #[derive(PartialEq, Clone, Copy)]
-enum EnemyType { Goomba, Koopa }
+enum EnemyType {
+    Goomba,
+    Koopa,
+}
 
 #[derive(PartialEq, Clone, Copy)]
-enum EnemyState { Walking, Dead, Shell, ShellMoving }
+enum EnemyState {
+    Walking,
+    Dead,
+    Shell,
+    ShellMoving,
+}
 
 struct Player {
-    x: f32, y: f32,
-    vx: f32, vy: f32,
-    width: f32, height: f32,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    width: f32,
+    height: f32,
     on_ground: bool,
     facing_right: bool,
     is_big: bool,
@@ -196,18 +252,34 @@ struct Player {
 impl Player {
     fn new(x: f32, y: f32) -> Self {
         Self {
-            x, y, vx: 0.0, vy: 0.0,
-            width: PLAYER_SMALL_W, height: PLAYER_SMALL_H,
-            on_ground: false, facing_right: true, is_big: false, is_fire: false,
-            is_jumping: false, anim_state: PlayerAnim::Idle,
-            run_frame: 0.0, invincible_timer: 0.0,
-            portal_cooldown: 0.0, teleport_cooldown: 0.0,
+            x,
+            y,
+            vx: 0.0,
+            vy: 0.0,
+            width: PLAYER_SMALL_W,
+            height: PLAYER_SMALL_H,
+            on_ground: false,
+            facing_right: true,
+            is_big: false,
+            is_fire: false,
+            is_jumping: false,
+            anim_state: PlayerAnim::Idle,
+            run_frame: 0.0,
+            invincible_timer: 0.0,
+            portal_cooldown: 0.0,
+            teleport_cooldown: 0.0,
         }
     }
 
-    fn center_x(&self) -> f32 { self.x + self.width / 2.0 }
-    fn center_y(&self) -> f32 { self.y + self.height / 2.0 }
-    fn bottom(&self) -> f32 { self.y + self.height }
+    fn center_x(&self) -> f32 {
+        self.x + self.width / 2.0
+    }
+    fn center_y(&self) -> f32 {
+        self.y + self.height / 2.0
+    }
+    fn bottom(&self) -> f32 {
+        self.y + self.height
+    }
 
     fn set_size(&mut self, big: bool) {
         let was_big = self.is_big;
@@ -229,47 +301,68 @@ impl Player {
 
 #[derive(Clone)]
 struct Portal {
-    x: f32, y: f32,
+    x: f32,
+    y: f32,
     orientation: Orientation,
     active: bool,
-    open_scale: f32,  // 0→1 opening animation (original: dt*15)
+    open_scale: f32, // 0→1 opening animation (original: dt*15)
 }
 
 struct PortalProjectile {
-    x: f32, y: f32,
-    vx: f32, vy: f32,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
     portal_index: usize,
     active: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum BlockContent { Coin, MultiCoin(u32), Mushroom, Star, OneUp, FireFlower }
+enum BlockContent {
+    Coin,
+    MultiCoin(u32),
+    Mushroom,
+    Star,
+    OneUp,
+    FireFlower,
+}
 
 #[derive(Clone, Copy, PartialEq)]
-enum ItemType { Mushroom, Star, OneUp, FireFlower }
+enum ItemType {
+    Mushroom,
+    Star,
+    OneUp,
+    FireFlower,
+}
 
 struct Fireball {
-    x: f32, y: f32,
-    vx: f32, vy: f32,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
     anim_timer: f32,
     exploding: bool,
     explode_timer: f32,
 }
 
 struct Item {
-    x: f32, y: f32,
-    vx: f32, vy: f32,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
     item_type: ItemType,
-    emerging: bool,       // still popping out of block
-    emerge_y: f32,        // target y after emerging
+    emerging: bool, // still popping out of block
+    emerge_y: f32,  // target y after emerging
     emerge_timer: f32,
     anim_timer: f32,
 }
 
 #[derive(Clone)]
 struct Enemy {
-    x: f32, y: f32,
-    vx: f32, vy: f32,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
     enemy_type: EnemyType,
     state: EnemyState,
     facing_right: bool,
@@ -277,35 +370,41 @@ struct Enemy {
     activated: bool,
     anim_timer: f32,
     death_timer: f32,
-    flipped_death: bool,  // true = star/fireball kill (flip + fly off)
+    flipped_death: bool, // true = star/fireball kill (flip + fly off)
 }
 
 #[derive(Clone)]
 struct CoinInstance {
-    x: f32, y: f32,
+    x: f32,
+    y: f32,
     collected: bool,
 }
 
 struct BlockBounce {
-    col: i32, row: i32,
+    col: i32,
+    row: i32,
     timer: f32,
 }
 
 struct CoinPopup {
-    x: f32, y: f32,
+    x: f32,
+    y: f32,
     vy: f32,
     timer: f32,
 }
 
 struct ScorePopup {
-    x: f32, y: f32,
+    x: f32,
+    y: f32,
     value: u32,
     timer: f32,
 }
 
 struct BrickDebris {
-    x: f32, y: f32,
-    vx: f32, vy: f32,
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
     timer: f32,
 }
 
@@ -314,7 +413,7 @@ struct Level {
     width: usize,
     height: usize,
     coins: Vec<CoinInstance>,
-    enemy_spawns: Vec<(EnemyType, f32, f32, bool)>,  // (type, x, y, facing_right)
+    enemy_spawns: Vec<(EnemyType, f32, f32, bool)>, // (type, x, y, facing_right)
     block_contents: HashMap<(usize, usize), BlockContent>,
     multi_coin_timers: HashMap<(usize, usize), f32>,
     player_start: (f32, f32),
@@ -363,7 +462,9 @@ fn load_level(content: &str) -> Level {
         let mut tile_row = vec![SMB_EMPTY; cols];
         for col in 0..cols {
             let idx = row * cols + col;
-            if idx >= values.len() { break; }
+            if idx >= values.len() {
+                break;
+            }
             let val = values[idx].trim();
 
             // Parse entity markers: "tile_id-entity_type[-subtype]"
@@ -377,13 +478,21 @@ fn load_level(content: &str) -> Level {
                 let py = row as f32 * TILE_SIZE;
                 let subtype: u32 = if parts.len() >= 3 {
                     parts[2].parse().unwrap_or(0)
-                } else { 0 };
+                } else {
+                    0
+                };
 
                 match entity_type {
                     // Block contents
-                    2 => { block_contents.insert((row, col), BlockContent::Mushroom); }
-                    3 => { block_contents.insert((row, col), BlockContent::OneUp); }
-                    4 => { block_contents.insert((row, col), BlockContent::Star); }
+                    2 => {
+                        block_contents.insert((row, col), BlockContent::Mushroom);
+                    }
+                    3 => {
+                        block_contents.insert((row, col), BlockContent::OneUp);
+                    }
+                    4 => {
+                        block_contents.insert((row, col), BlockContent::Star);
+                    }
                     5 => {
                         let count = if subtype > 0 { subtype } else { 5 };
                         block_contents.insert((row, col), BlockContent::MultiCoin(count));
@@ -391,9 +500,11 @@ fn load_level(content: &str) -> Level {
                     // Enemies
                     6 => enemy_spawns.push((EnemyType::Goomba, px, py, false)),
                     7 => enemy_spawns.push((EnemyType::Koopa, px, py, false)),
-                    9 => enemy_spawns.push((EnemyType::Goomba, px, py, true)),  // right-aligned goomba
+                    9 => enemy_spawns.push((EnemyType::Goomba, px, py, true)), // right-aligned goomba
                     // Level markers
-                    11 => { flag_x = px; }
+                    11 => {
+                        flag_x = px;
+                    }
                     _ => {}
                 }
             }
@@ -410,24 +521,42 @@ fn load_level(content: &str) -> Level {
     let player_start = (3.0 * TILE_SIZE, 13.0 * TILE_SIZE - PLAYER_SMALL_H);
 
     Level {
-        tiles, width: cols, height: rows, coins: Vec::new(),
-        enemy_spawns, block_contents,
+        tiles,
+        width: cols,
+        height: rows,
+        coins: Vec::new(),
+        enemy_spawns,
+        block_contents,
         multi_coin_timers: HashMap::new(),
-        player_start, flag_x, time_limit,
+        player_start,
+        flag_x,
+        time_limit,
     }
 }
 
 // ── Collision helpers ───────────────────────────────────────────────
 
 fn is_solid(tile_id: u32) -> bool {
-    matches!(tile_id, SMB_GROUND | SMB_QUESTION_USED | SMB_BRICK | SMB_QUESTION
-             | SMB_PIPE_TL | SMB_PIPE_TR | SMB_PIPE_BL | SMB_PIPE_BR
-             | SMB_STAIRCASE | SMB_HIDDEN_BLOCK)
+    matches!(
+        tile_id,
+        SMB_GROUND
+            | SMB_QUESTION_USED
+            | SMB_BRICK
+            | SMB_QUESTION
+            | SMB_PIPE_TL
+            | SMB_PIPE_TR
+            | SMB_PIPE_BL
+            | SMB_PIPE_BR
+            | SMB_STAIRCASE
+            | SMB_HIDDEN_BLOCK
+    )
 }
 
 fn is_portal_surface(tile_id: u32) -> bool {
-    matches!(tile_id, SMB_GROUND | SMB_QUESTION_USED | SMB_BRICK
-             | SMB_PIPE_BL | SMB_PIPE_BR | SMB_STAIRCASE)
+    matches!(
+        tile_id,
+        SMB_GROUND | SMB_QUESTION_USED | SMB_BRICK | SMB_PIPE_BL | SMB_PIPE_BR | SMB_STAIRCASE
+    )
 }
 
 fn get_tile(level: &Level, col: i32, row: i32) -> u32 {
@@ -438,14 +567,27 @@ fn get_tile(level: &Level, col: i32, row: i32) -> u32 {
 }
 
 fn tile_rect(col: i32, row: i32) -> (f32, f32, f32, f32) {
-    (col as f32 * TILE_SIZE, row as f32 * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+    (
+        col as f32 * TILE_SIZE,
+        row as f32 * TILE_SIZE,
+        TILE_SIZE,
+        TILE_SIZE,
+    )
 }
 
 fn aabb_overlap(ax: f32, ay: f32, aw: f32, ah: f32, bx: f32, by: f32, bw: f32, bh: f32) -> bool {
     ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by
 }
 
-fn move_and_collide_x(player_x: &mut f32, player_y: f32, pw: f32, ph: f32, vx: f32, level: &Level, dt: f32) -> f32 {
+fn move_and_collide_x(
+    player_x: &mut f32,
+    player_y: f32,
+    pw: f32,
+    ph: f32,
+    vx: f32,
+    level: &Level,
+    dt: f32,
+) -> f32 {
     let dx = vx * dt;
     *player_x += dx;
 
@@ -472,7 +614,15 @@ fn move_and_collide_x(player_x: &mut f32, player_y: f32, pw: f32, ph: f32, vx: f
     vx
 }
 
-fn move_and_collide_y(player_x: f32, player_y: &mut f32, pw: f32, ph: f32, vy: f32, level: &Level, dt: f32) -> (f32, bool) {
+fn move_and_collide_y(
+    player_x: f32,
+    player_y: &mut f32,
+    pw: f32,
+    ph: f32,
+    vy: f32,
+    level: &Level,
+    dt: f32,
+) -> (f32, bool) {
     let dy = vy * dt;
     *player_y += dy;
 
@@ -504,7 +654,12 @@ fn move_and_collide_y(player_x: f32, player_y: &mut f32, pw: f32, ph: f32, vy: f
 
 // ── Portal velocity transform ───────────────────────────────────────
 
-fn transform_velocity(vx: f32, vy: f32, entry_orient: Orientation, exit_orient: Orientation) -> (f32, f32) {
+fn transform_velocity(
+    vx: f32,
+    vy: f32,
+    entry_orient: Orientation,
+    exit_orient: Orientation,
+) -> (f32, f32) {
     // Speed entering along normal of entry portal
     let speed = match entry_orient {
         Orientation::Up => -vy,
@@ -529,8 +684,12 @@ fn transform_velocity(vx: f32, vy: f32, entry_orient: Orientation, exit_orient: 
 /// so dots can always be drawn along the ray.
 /// Returns (end_x, end_y, Option<(orientation, can_portal)>).
 fn trace_aim_line(
-    level: &Level, sx: f32, sy: f32, angle: f32,
-    cam_x: f32, view_w: f32,
+    level: &Level,
+    sx: f32,
+    sy: f32,
+    angle: f32,
+    cam_x: f32,
+    view_w: f32,
 ) -> (f32, f32, Option<(Orientation, bool)>) {
     let cos_a = angle.cos();
     let sin_a = angle.sin();
@@ -561,10 +720,15 @@ fn trace_aim_line(
             let prev_col = (prev_px / TILE_SIZE).floor() as i32;
             let prev_row = (prev_py / TILE_SIZE).floor() as i32;
 
-            let orient = if prev_col < col { Orientation::Left }
-                else if prev_col > col { Orientation::Right }
-                else if prev_row < row { Orientation::Up }
-                else { Orientation::Down };
+            let orient = if prev_col < col {
+                Orientation::Left
+            } else if prev_col > col {
+                Orientation::Right
+            } else if prev_row < row {
+                Orientation::Up
+            } else {
+                Orientation::Down
+            };
 
             let (hx, hy) = match orient {
                 Orientation::Left => (col as f32 * TILE_SIZE, py),
@@ -591,8 +755,8 @@ struct Mari0Game {
     projectiles: Vec<PortalProjectile>,
     crosshair_angle: f32,
     aim_dot_timer: f32,
-    portal_anim_timer: f32,  // global portal animation timer
-    portal_anim_frame: u32,  // current frame 0..5 (maps to original frames 1..6)
+    portal_anim_timer: f32, // global portal animation timer
+    portal_anim_frame: u32, // current frame 0..5 (maps to original frames 1..6)
     enemies: Vec<Enemy>,
     level: Level,
     camera: Camera,
@@ -610,12 +774,12 @@ struct Mari0Game {
     brick_debris: Vec<BrickDebris>,
     items: Vec<Item>,
     fireballs: Vec<Fireball>,
-    star_timer: f32,  // player star invincibility timer
+    star_timer: f32, // player star invincibility timer
 
     // Sprite sheet textures
     tex_tiles: TextureId,
-    tex_mario_layers: [TextureId; 4],      // layers 0-3 (small)
-    tex_mario_big_layers: [TextureId; 4],  // layers 0-3 (big)
+    tex_mario_layers: [TextureId; 4],     // layers 0-3 (small)
+    tex_mario_big_layers: [TextureId; 4], // layers 0-3 (big)
     tex_goomba: TextureId,
     tex_koopa: TextureId,
     tex_coin_anim: TextureId,
@@ -624,7 +788,7 @@ struct Mari0Game {
     tex_flower: TextureId,
     tex_fireball: TextureId,
     tex_portal: TextureId,
-    tex_portal_v: TextureId,  // pre-rotated portal for vertical (left/right) orientation
+    tex_portal_v: TextureId, // pre-rotated portal for vertical (left/right) orientation
     tex_portal_crosshair: TextureId,
     tex_portal_projectile: TextureId,
     tex_portal_dot: TextureId,
@@ -634,30 +798,41 @@ struct Mari0Game {
 }
 
 fn spawn_enemies_from_level(level: &Level) -> Vec<Enemy> {
-    level.enemy_spawns.iter().map(|(et, x, y, face_right)| {
-        let h = match et {
-            EnemyType::Koopa => 48.0,  // koopa is taller: 24px * 2 scale
-            EnemyType::Goomba => PLAYER_SMALL_H,
-        };
-        Enemy {
-            x: *x, y: *y - h,
-            vx: if *face_right { ENEMY_SPEED } else { -ENEMY_SPEED },
-            vy: 0.0,
-            enemy_type: *et,
-            state: EnemyState::Walking,
-            facing_right: *face_right,
-            on_ground: false,
-            activated: false,
-            anim_timer: 0.0,
-            death_timer: 0.0,
-            flipped_death: false,
-        }
-    }).collect()
+    level
+        .enemy_spawns
+        .iter()
+        .map(|(et, x, y, face_right)| {
+            let h = match et {
+                EnemyType::Koopa => 48.0, // koopa is taller: 24px * 2 scale
+                EnemyType::Goomba => PLAYER_SMALL_H,
+            };
+            Enemy {
+                x: *x,
+                y: *y - h,
+                vx: if *face_right {
+                    ENEMY_SPEED
+                } else {
+                    -ENEMY_SPEED
+                },
+                vy: 0.0,
+                enemy_type: *et,
+                state: EnemyState::Walking,
+                facing_right: *face_right,
+                on_ground: false,
+                activated: false,
+                anim_timer: 0.0,
+                death_timer: 0.0,
+                flipped_death: false,
+            }
+        })
+        .collect()
 }
 
 impl Mari0Game {
     fn tex(ctx: &Context, name: &str) -> TextureId {
-        ctx.assets.texture_id(name).unwrap_or_else(|| panic!("Missing texture: {}", name))
+        ctx.assets
+            .texture_id(name)
+            .unwrap_or_else(|| panic!("Missing texture: {}", name))
     }
 
     fn reset_level(&mut self) {
@@ -693,18 +868,22 @@ impl Mari0Game {
         let fire_blue = input.is_action_just_pressed("portal_blue");
         let fire_orange = input.is_action_just_pressed("portal_orange");
         let fire_ball = input.is_action_just_pressed("fire");
-        let sprint = input.is_action_pressed("fire");  // hold shift/F to sprint
+        let sprint = input.is_action_pressed("fire"); // hold shift/F to sprint
 
         // Mouse aiming (virtual coords → world coords)
         let (mx, my) = input.mouse_position();
         let world_mx = mx + self.camera.x;
         let world_my = my;
-        self.crosshair_angle = (world_my - self.player.center_y())
-            .atan2(world_mx - self.player.center_x());
+        self.crosshair_angle =
+            (world_my - self.player.center_y()).atan2(world_mx - self.player.center_x());
 
         // ── Horizontal movement (sprint = higher accel & max speed) ──
         let accel = if sprint { RUN_ACCEL } else { WALK_ACCEL };
-        let max_speed = if sprint { MAX_RUN_SPEED } else { MAX_WALK_SPEED };
+        let max_speed = if sprint {
+            MAX_RUN_SPEED
+        } else {
+            MAX_WALK_SPEED
+        };
         if move_right {
             self.player.vx += accel * dt;
             self.player.facing_right = true;
@@ -725,7 +904,11 @@ impl Mari0Game {
 
         // ── Jump (higher when sprinting, like original SMB) ──
         if jump_just && self.player.on_ground {
-            self.player.vy = if sprint { JUMP_VELOCITY_RUN } else { JUMP_VELOCITY };
+            self.player.vy = if sprint {
+                JUMP_VELOCITY_RUN
+            } else {
+                JUMP_VELOCITY
+            };
             self.player.is_jumping = true;
             self.player.on_ground = false;
             self.combo_index = 0;
@@ -751,15 +934,23 @@ impl Mari0Game {
 
         // ── Move & collide ──
         self.player.vx = move_and_collide_x(
-            &mut self.player.x, self.player.y,
-            self.player.width, self.player.height,
-            self.player.vx, &self.level, dt
+            &mut self.player.x,
+            self.player.y,
+            self.player.width,
+            self.player.height,
+            self.player.vx,
+            &self.level,
+            dt,
         );
 
         let (new_vy, on_ground) = move_and_collide_y(
-            self.player.x, &mut self.player.y,
-            self.player.width, self.player.height,
-            self.player.vy, &self.level, dt
+            self.player.x,
+            &mut self.player.y,
+            self.player.width,
+            self.player.height,
+            self.player.vy,
+            &self.level,
+            dt,
         );
         self.player.vy = new_vy;
         self.player.on_ground = on_ground;
@@ -778,8 +969,10 @@ impl Mari0Game {
             let left_col = ((self.player.x + 4.0) / TILE_SIZE).floor() as i32;
             let right_col = ((self.player.x + self.player.width - 4.0) / TILE_SIZE).floor() as i32;
             for col in left_col..=right_col {
-                if head_row >= 0 && head_row < self.level.height as i32
-                    && col >= 0 && col < self.level.width as i32
+                if head_row >= 0
+                    && head_row < self.level.height as i32
+                    && col >= 0
+                    && col < self.level.width as i32
                 {
                     let r = head_row as usize;
                     let c = col as usize;
@@ -815,7 +1008,11 @@ impl Mari0Game {
 
         // ── Fireballs ──
         if fire_ball && self.player.is_fire && self.fireballs.len() < MAX_FIREBALLS {
-            let dir = if self.crosshair_angle.cos() >= 0.0 { 1.0 } else { -1.0 };
+            let dir = if self.crosshair_angle.cos() >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
             self.fireballs.push(Fireball {
                 x: self.player.center_x(),
                 y: self.player.center_y(),
@@ -845,10 +1042,18 @@ impl Mari0Game {
 
         // ── Coins ──
         for coin in &mut self.level.coins {
-            if !coin.collected && aabb_overlap(
-                self.player.x, self.player.y, self.player.width, self.player.height,
-                coin.x, coin.y, 16.0, 16.0,
-            ) {
+            if !coin.collected
+                && aabb_overlap(
+                    self.player.x,
+                    self.player.y,
+                    self.player.width,
+                    self.player.height,
+                    coin.x,
+                    coin.y,
+                    16.0,
+                    16.0,
+                )
+            {
                 coin.collected = true;
                 self.score += COIN_SCORE;
                 self.coins += 1;
@@ -880,7 +1085,11 @@ impl Mari0Game {
 
         // ── Animation ──
         if !self.player.on_ground {
-            self.player.anim_state = if self.player.vy < 0.0 { PlayerAnim::Jump } else { PlayerAnim::Fall };
+            self.player.anim_state = if self.player.vy < 0.0 {
+                PlayerAnim::Jump
+            } else {
+                PlayerAnim::Fall
+            };
         } else if self.player.vx.abs() > 10.0 {
             self.player.anim_state = PlayerAnim::Run;
             self.player.run_frame += self.player.vx.abs() * dt * 0.05;
@@ -942,7 +1151,10 @@ impl Mari0Game {
         self.brick_debris.retain(|d| d.timer < 2.0);
 
         // ── Multi-coin block timers ──
-        let expired: Vec<(usize, usize)> = self.level.multi_coin_timers.iter()
+        let expired: Vec<(usize, usize)> = self
+            .level
+            .multi_coin_timers
+            .iter()
             .filter_map(|(k, v)| if *v <= 0.0 { Some(*k) } else { None })
             .collect();
         for key in &expired {
@@ -960,7 +1172,8 @@ impl Mari0Game {
 
     fn fire_projectile(&mut self, index: usize) {
         let angle = self.crosshair_angle;
-        self.projectiles.retain(|p| p.portal_index != index || !p.active);
+        self.projectiles
+            .retain(|p| p.portal_index != index || !p.active);
         self.projectiles.push(PortalProjectile {
             x: self.player.center_x(),
             y: self.player.center_y(),
@@ -973,7 +1186,9 @@ impl Mari0Game {
 
     fn update_projectiles(&mut self, ctx: &Context, dt: f32) {
         for proj in &mut self.projectiles {
-            if !proj.active { continue; }
+            if !proj.active {
+                continue;
+            }
             proj.x += proj.vx * dt;
             proj.y += proj.vy * dt;
 
@@ -989,16 +1204,33 @@ impl Mari0Game {
                 let prev_col = (prev_x / TILE_SIZE).floor() as i32;
                 let prev_row = (prev_y / TILE_SIZE).floor() as i32;
 
-                let orient = if prev_col < col { Orientation::Left }
-                    else if prev_col > col { Orientation::Right }
-                    else if prev_row < row { Orientation::Up }
-                    else { Orientation::Down };
+                let orient = if prev_col < col {
+                    Orientation::Left
+                } else if prev_col > col {
+                    Orientation::Right
+                } else if prev_row < row {
+                    Orientation::Up
+                } else {
+                    Orientation::Down
+                };
 
                 let (portal_x, portal_y) = match orient {
-                    Orientation::Left => (col as f32 * TILE_SIZE, row as f32 * TILE_SIZE + TILE_SIZE / 2.0),
-                    Orientation::Right => ((col + 1) as f32 * TILE_SIZE, row as f32 * TILE_SIZE + TILE_SIZE / 2.0),
-                    Orientation::Up => (col as f32 * TILE_SIZE + TILE_SIZE / 2.0, row as f32 * TILE_SIZE),
-                    Orientation::Down => (col as f32 * TILE_SIZE + TILE_SIZE / 2.0, (row + 1) as f32 * TILE_SIZE),
+                    Orientation::Left => (
+                        col as f32 * TILE_SIZE,
+                        row as f32 * TILE_SIZE + TILE_SIZE / 2.0,
+                    ),
+                    Orientation::Right => (
+                        (col + 1) as f32 * TILE_SIZE,
+                        row as f32 * TILE_SIZE + TILE_SIZE / 2.0,
+                    ),
+                    Orientation::Up => (
+                        col as f32 * TILE_SIZE + TILE_SIZE / 2.0,
+                        row as f32 * TILE_SIZE,
+                    ),
+                    Orientation::Down => (
+                        col as f32 * TILE_SIZE + TILE_SIZE / 2.0,
+                        (row + 1) as f32 * TILE_SIZE,
+                    ),
                 };
 
                 self.portals[proj.portal_index] = Some(Portal {
@@ -1020,8 +1252,10 @@ impl Mari0Game {
             }
 
             // Out of bounds
-            if proj.x < -100.0 || proj.x > (self.level.width as f32 * TILE_SIZE) + 100.0
-                || proj.y < -100.0 || proj.y > (self.level.height as f32 * TILE_SIZE) + 100.0
+            if proj.x < -100.0
+                || proj.x > (self.level.width as f32 * TILE_SIZE) + 100.0
+                || proj.y < -100.0
+                || proj.y > (self.level.height as f32 * TILE_SIZE) + 100.0
             {
                 proj.active = false;
             }
@@ -1030,7 +1264,9 @@ impl Mari0Game {
     }
 
     fn check_portal_teleport(&mut self, ctx: &Context) {
-        if self.player.teleport_cooldown > 0.0 { return; }
+        if self.player.teleport_cooldown > 0.0 {
+            return;
+        }
         let (p0, p1) = match (&self.portals[0], &self.portals[1]) {
             (Some(a), Some(b)) if a.active && b.active => (a.clone(), b.clone()),
             _ => return,
@@ -1039,13 +1275,21 @@ impl Mari0Game {
         // Check overlap with either portal
         for (entry, exit) in [(&p0, &p1), (&p1, &p0)] {
             let portal_rect = match entry.orientation {
-                Orientation::Left | Orientation::Right => (entry.x - 4.0, entry.y - 32.0, 8.0, 64.0),
+                Orientation::Left | Orientation::Right => {
+                    (entry.x - 4.0, entry.y - 32.0, 8.0, 64.0)
+                }
                 Orientation::Up | Orientation::Down => (entry.x - 32.0, entry.y - 4.0, 64.0, 8.0),
             };
 
             if aabb_overlap(
-                self.player.x, self.player.y, self.player.width, self.player.height,
-                portal_rect.0, portal_rect.1, portal_rect.2, portal_rect.3,
+                self.player.x,
+                self.player.y,
+                self.player.width,
+                self.player.height,
+                portal_rect.0,
+                portal_rect.1,
+                portal_rect.2,
+                portal_rect.3,
             ) {
                 // Check player is moving into the portal
                 let entering = match entry.orientation {
@@ -1054,20 +1298,30 @@ impl Mari0Game {
                     Orientation::Up => self.player.vy > 0.0,
                     Orientation::Down => self.player.vy < 0.0,
                 };
-                if !entering { continue; }
+                if !entering {
+                    continue;
+                }
 
                 // Teleport
                 let (new_vx, new_vy) = transform_velocity(
-                    self.player.vx, self.player.vy,
-                    entry.orientation, exit.orientation,
+                    self.player.vx,
+                    self.player.vy,
+                    entry.orientation,
+                    exit.orientation,
                 );
 
                 // Position at exit portal
                 let offset = 8.0;
                 let (new_x, new_y) = match exit.orientation {
-                    Orientation::Up => (exit.x - self.player.width / 2.0, exit.y - self.player.height - offset),
+                    Orientation::Up => (
+                        exit.x - self.player.width / 2.0,
+                        exit.y - self.player.height - offset,
+                    ),
                     Orientation::Down => (exit.x - self.player.width / 2.0, exit.y + offset),
-                    Orientation::Left => (exit.x - self.player.width - offset, exit.y - self.player.height / 2.0),
+                    Orientation::Left => (
+                        exit.x - self.player.width - offset,
+                        exit.y - self.player.height / 2.0,
+                    ),
                     Orientation::Right => (exit.x + offset, exit.y - self.player.height / 2.0),
                 };
 
@@ -1108,7 +1362,9 @@ impl Mari0Game {
 
                     // Gravity
                     enemy.vy += GRAVITY * dt;
-                    if enemy.vy > MAX_Y_SPEED { enemy.vy = MAX_Y_SPEED; }
+                    if enemy.vy > MAX_Y_SPEED {
+                        enemy.vy = MAX_Y_SPEED;
+                    }
 
                     // Horizontal movement + wall collision
                     let old_x = enemy.x;
@@ -1186,7 +1442,9 @@ impl Mari0Game {
                 EnemyState::Shell => {
                     // Gravity for stationary shell too
                     enemy.vy += GRAVITY * dt;
-                    if enemy.vy > MAX_Y_SPEED { enemy.vy = MAX_Y_SPEED; }
+                    if enemy.vy > MAX_Y_SPEED {
+                        enemy.vy = MAX_Y_SPEED;
+                    }
                     enemy.y += enemy.vy * dt;
                     let left_col = (enemy.x / TILE_SIZE).floor() as i32;
                     let right_col = ((enemy.x + ew - 0.01) / TILE_SIZE).floor() as i32;
@@ -1196,7 +1454,16 @@ impl Mari0Game {
                         for col in left_col..=right_col {
                             if is_solid(get_tile(&self.level, col, row)) {
                                 let (tx, ty, tw, th) = tile_rect(col, row);
-                                if aabb_overlap(enemy.x, enemy.y, ew, PLAYER_SMALL_H, tx, ty, tw, th) {
+                                if aabb_overlap(
+                                    enemy.x,
+                                    enemy.y,
+                                    ew,
+                                    PLAYER_SMALL_H,
+                                    tx,
+                                    ty,
+                                    tw,
+                                    th,
+                                ) {
                                     if enemy.vy > 0.0 {
                                         enemy.y = ty - PLAYER_SMALL_H;
                                         enemy.on_ground = true;
@@ -1213,7 +1480,9 @@ impl Mari0Game {
         // Player-enemy interaction
         let mut player_bounce = false;
         for enemy in &mut self.enemies {
-            if enemy.state == EnemyState::Dead || !enemy.activated { continue; }
+            if enemy.state == EnemyState::Dead || !enemy.activated {
+                continue;
+            }
 
             let eh = match enemy.enemy_type {
                 EnemyType::Koopa if enemy.state == EnemyState::Walking => 48.0,
@@ -1221,9 +1490,17 @@ impl Mari0Game {
             };
 
             if !aabb_overlap(
-                self.player.x, self.player.y, self.player.width, self.player.height,
-                enemy.x, enemy.y, PLAYER_SMALL_W, eh,
-            ) { continue; }
+                self.player.x,
+                self.player.y,
+                self.player.width,
+                self.player.height,
+                enemy.x,
+                enemy.y,
+                PLAYER_SMALL_W,
+                eh,
+            ) {
+                continue;
+            }
 
             // Check if stomping (player feet above enemy top half)
             let player_feet = self.player.bottom();
@@ -1232,18 +1509,16 @@ impl Mari0Game {
             if self.player.vy > 0.0 && player_feet < enemy_mid + 8.0 {
                 // Stomp!
                 match enemy.state {
-                    EnemyState::Walking => {
-                        match enemy.enemy_type {
-                            EnemyType::Goomba => {
-                                enemy.state = EnemyState::Dead;
-                                enemy.death_timer = ENEMY_DEATH_TIME;
-                            }
-                            EnemyType::Koopa => {
-                                enemy.state = EnemyState::Shell;
-                                enemy.vx = 0.0;
-                            }
+                    EnemyState::Walking => match enemy.enemy_type {
+                        EnemyType::Goomba => {
+                            enemy.state = EnemyState::Dead;
+                            enemy.death_timer = ENEMY_DEATH_TIME;
                         }
-                    }
+                        EnemyType::Koopa => {
+                            enemy.state = EnemyState::Shell;
+                            enemy.vx = 0.0;
+                        }
+                    },
                     EnemyState::Shell => {
                         // Kick shell
                         enemy.state = EnemyState::ShellMoving;
@@ -1265,9 +1540,9 @@ impl Mari0Game {
             } else if self.star_timer > 0.0 {
                 // Star invincibility: kill enemy on contact (flip + fly off)
                 enemy.state = EnemyState::Dead;
-                enemy.death_timer = 3.0;  // longer timer — flies off screen
+                enemy.death_timer = 3.0; // longer timer — flies off screen
                 enemy.flipped_death = true;
-                enemy.vy = -300.0;  // launch upward
+                enemy.vy = -300.0; // launch upward
                 let combo_score = COMBO_SCORES[self.combo_index.min(COMBO_SCORES.len() - 1)];
                 self.score += combo_score;
                 self.combo_index += 1;
@@ -1297,10 +1572,16 @@ impl Mari0Game {
 
         // Remove dead enemies after timer, or enemies that fell off the map
         self.enemies.retain(|e| {
-            if e.state == EnemyState::Dead && e.death_timer <= 0.0 { return false; }
-            if e.y > (self.level.height as f32) * TILE_SIZE + 100.0 { return false; }
+            if e.state == EnemyState::Dead && e.death_timer <= 0.0 {
+                return false;
+            }
+            if e.y > (self.level.height as f32) * TILE_SIZE + 100.0 {
+                return false;
+            }
             // Remove enemies far behind camera
-            if e.activated && e.x < cam_x - 200.0 { return false; }
+            if e.activated && e.x < cam_x - 200.0 {
+                return false;
+            }
             true
         });
     }
@@ -1324,7 +1605,11 @@ impl Mari0Game {
 
         match tile {
             SMB_QUESTION => {
-                let content = self.level.block_contents.get(&key).copied()
+                let content = self
+                    .level
+                    .block_contents
+                    .get(&key)
+                    .copied()
                     .unwrap_or(BlockContent::Coin);
                 match content {
                     BlockContent::Coin => {
@@ -1338,27 +1623,42 @@ impl Mari0Game {
                             self.lives += 1;
                         }
                         self.coin_popups.push(CoinPopup {
-                            x: bx, y: by - TILE_SIZE,
-                            vy: COIN_POPUP_SPEED, timer: 0.0,
+                            x: bx,
+                            y: by - TILE_SIZE,
+                            vy: COIN_POPUP_SPEED,
+                            timer: 0.0,
                         });
                         self.score_popups.push(ScorePopup {
-                            x: bx, y: by - TILE_SIZE,
-                            value: COIN_SCORE, timer: 0.0,
+                            x: bx,
+                            y: by - TILE_SIZE,
+                            value: COIN_SCORE,
+                            timer: 0.0,
                         });
                         ctx.audio.play("coin");
                     }
-                    BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp | BlockContent::FireFlower => {
+                    BlockContent::Mushroom
+                    | BlockContent::Star
+                    | BlockContent::OneUp
+                    | BlockContent::FireFlower => {
                         self.level.tiles[row][col] = SMB_QUESTION_USED;
                         self.level.block_contents.remove(&key);
                         let item_type = match content {
-                            BlockContent::Mushroom => if self.player.is_big { ItemType::FireFlower } else { ItemType::Mushroom },
+                            BlockContent::Mushroom => {
+                                if self.player.is_big {
+                                    ItemType::FireFlower
+                                } else {
+                                    ItemType::Mushroom
+                                }
+                            }
                             BlockContent::Star => ItemType::Star,
                             BlockContent::FireFlower => ItemType::FireFlower,
                             _ => ItemType::OneUp,
                         };
                         self.items.push(Item {
-                            x: bx, y: by,
-                            vx: 0.0, vy: 0.0,
+                            x: bx,
+                            y: by,
+                            vx: 0.0,
+                            vy: 0.0,
                             item_type,
                             emerging: true,
                             emerge_y: by - TILE_SIZE,
@@ -1373,7 +1673,9 @@ impl Mari0Game {
                             self.level.multi_coin_timers.insert(key, MULTI_COIN_TIMEOUT);
                         }
                         if remaining > 1 {
-                            self.level.block_contents.insert(key, BlockContent::MultiCoin(remaining - 1));
+                            self.level
+                                .block_contents
+                                .insert(key, BlockContent::MultiCoin(remaining - 1));
                         } else {
                             self.level.tiles[row][col] = SMB_QUESTION_USED;
                             self.level.block_contents.remove(&key);
@@ -1386,17 +1688,25 @@ impl Mari0Game {
                             self.lives += 1;
                         }
                         self.coin_popups.push(CoinPopup {
-                            x: bx, y: by - TILE_SIZE,
-                            vy: COIN_POPUP_SPEED, timer: 0.0,
+                            x: bx,
+                            y: by - TILE_SIZE,
+                            vy: COIN_POPUP_SPEED,
+                            timer: 0.0,
                         });
                         self.score_popups.push(ScorePopup {
-                            x: bx, y: by - TILE_SIZE,
-                            value: COIN_SCORE, timer: 0.0,
+                            x: bx,
+                            y: by - TILE_SIZE,
+                            value: COIN_SCORE,
+                            timer: 0.0,
                         });
                         ctx.audio.play("coin");
                     }
                 }
-                self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                self.block_bounces.push(BlockBounce {
+                    col: col as i32,
+                    row: row as i32,
+                    timer: 0.0,
+                });
                 ctx.audio.play("blockhit");
             }
             SMB_BRICK => {
@@ -1408,7 +1718,9 @@ impl Mari0Game {
                                 self.level.multi_coin_timers.insert(key, MULTI_COIN_TIMEOUT);
                             }
                             if remaining > 1 {
-                                self.level.block_contents.insert(key, BlockContent::MultiCoin(remaining - 1));
+                                self.level
+                                    .block_contents
+                                    .insert(key, BlockContent::MultiCoin(remaining - 1));
                             } else {
                                 self.level.tiles[row][col] = SMB_QUESTION_USED;
                                 self.level.block_contents.remove(&key);
@@ -1416,14 +1728,21 @@ impl Mari0Game {
                             }
                             self.score += COIN_SCORE;
                             self.coins += 1;
-                            if self.coins >= 100 { self.coins -= 100; self.lives += 1; }
+                            if self.coins >= 100 {
+                                self.coins -= 100;
+                                self.lives += 1;
+                            }
                             self.coin_popups.push(CoinPopup {
-                                x: bx, y: by - TILE_SIZE,
-                                vy: COIN_POPUP_SPEED, timer: 0.0,
+                                x: bx,
+                                y: by - TILE_SIZE,
+                                vy: COIN_POPUP_SPEED,
+                                timer: 0.0,
                             });
                             self.score_popups.push(ScorePopup {
-                                x: bx, y: by - TILE_SIZE,
-                                value: COIN_SCORE, timer: 0.0,
+                                x: bx,
+                                y: by - TILE_SIZE,
+                                value: COIN_SCORE,
+                                timer: 0.0,
                             });
                             ctx.audio.play("coin");
                         }
@@ -1432,29 +1751,47 @@ impl Mari0Game {
                             self.level.block_contents.remove(&key);
                             self.score += COIN_SCORE;
                             self.coins += 1;
-                            if self.coins >= 100 { self.coins -= 100; self.lives += 1; }
+                            if self.coins >= 100 {
+                                self.coins -= 100;
+                                self.lives += 1;
+                            }
                             self.coin_popups.push(CoinPopup {
-                                x: bx, y: by - TILE_SIZE,
-                                vy: COIN_POPUP_SPEED, timer: 0.0,
+                                x: bx,
+                                y: by - TILE_SIZE,
+                                vy: COIN_POPUP_SPEED,
+                                timer: 0.0,
                             });
                             self.score_popups.push(ScorePopup {
-                                x: bx, y: by - TILE_SIZE,
-                                value: COIN_SCORE, timer: 0.0,
+                                x: bx,
+                                y: by - TILE_SIZE,
+                                value: COIN_SCORE,
+                                timer: 0.0,
                             });
                             ctx.audio.play("coin");
                         }
-                        BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp | BlockContent::FireFlower => {
+                        BlockContent::Mushroom
+                        | BlockContent::Star
+                        | BlockContent::OneUp
+                        | BlockContent::FireFlower => {
                             self.level.tiles[row][col] = SMB_QUESTION_USED;
                             self.level.block_contents.remove(&key);
                             let item_type = match content {
-                                BlockContent::Mushroom => if self.player.is_big { ItemType::FireFlower } else { ItemType::Mushroom },
+                                BlockContent::Mushroom => {
+                                    if self.player.is_big {
+                                        ItemType::FireFlower
+                                    } else {
+                                        ItemType::Mushroom
+                                    }
+                                }
                                 BlockContent::Star => ItemType::Star,
                                 BlockContent::FireFlower => ItemType::FireFlower,
                                 _ => ItemType::OneUp,
                             };
                             self.items.push(Item {
-                                x: bx, y: by,
-                                vx: 0.0, vy: 0.0,
+                                x: bx,
+                                y: by,
+                                vx: 0.0,
+                                vy: 0.0,
                                 item_type,
                                 emerging: true,
                                 emerge_y: by - TILE_SIZE,
@@ -1464,28 +1801,47 @@ impl Mari0Game {
                             ctx.audio.play("mushroomappear");
                         }
                     }
-                    self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                    self.block_bounces.push(BlockBounce {
+                        col: col as i32,
+                        row: row as i32,
+                        timer: 0.0,
+                    });
                     ctx.audio.play("blockhit");
                 } else if self.player.is_big {
                     // Big Mario breaks empty brick
                     self.level.tiles[row][col] = SMB_EMPTY;
                     self.score += BRICK_BREAK_SCORE;
                     self.score_popups.push(ScorePopup {
-                        x: bx, y: by - TILE_SIZE,
-                        value: BRICK_BREAK_SCORE, timer: 0.0,
+                        x: bx,
+                        y: by - TILE_SIZE,
+                        value: BRICK_BREAK_SCORE,
+                        timer: 0.0,
                     });
                     // 4 debris particles
                     let cx = bx + TILE_SIZE * 0.5;
                     let cy = by + TILE_SIZE * 0.5;
-                    for &(dvx, dvy) in &[(-112.0f32, -736.0f32), (112.0, -736.0), (-112.0, -448.0), (112.0, -448.0)] {
+                    for &(dvx, dvy) in &[
+                        (-112.0f32, -736.0f32),
+                        (112.0, -736.0),
+                        (-112.0, -448.0),
+                        (112.0, -448.0),
+                    ] {
                         self.brick_debris.push(BrickDebris {
-                            x: cx, y: cy, vx: dvx, vy: dvy, timer: 0.0,
+                            x: cx,
+                            y: cy,
+                            vx: dvx,
+                            vy: dvy,
+                            timer: 0.0,
                         });
                     }
                     ctx.audio.play("blockbreak");
                 } else {
                     // Small Mario just bounces the brick
-                    self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                    self.block_bounces.push(BlockBounce {
+                        col: col as i32,
+                        row: row as i32,
+                        timer: 0.0,
+                    });
                     ctx.audio.play("blockhit");
                 }
             }
@@ -1494,16 +1850,27 @@ impl Mari0Game {
                     self.level.tiles[row][col] = SMB_QUESTION_USED;
                     self.level.block_contents.remove(&key);
                     match content {
-                        BlockContent::Mushroom | BlockContent::Star | BlockContent::OneUp | BlockContent::FireFlower => {
+                        BlockContent::Mushroom
+                        | BlockContent::Star
+                        | BlockContent::OneUp
+                        | BlockContent::FireFlower => {
                             let item_type = match content {
-                                BlockContent::Mushroom => if self.player.is_big { ItemType::FireFlower } else { ItemType::Mushroom },
+                                BlockContent::Mushroom => {
+                                    if self.player.is_big {
+                                        ItemType::FireFlower
+                                    } else {
+                                        ItemType::Mushroom
+                                    }
+                                }
                                 BlockContent::Star => ItemType::Star,
                                 BlockContent::FireFlower => ItemType::FireFlower,
                                 _ => ItemType::OneUp,
                             };
                             self.items.push(Item {
-                                x: bx, y: by,
-                                vx: 0.0, vy: 0.0,
+                                x: bx,
+                                y: by,
+                                vx: 0.0,
+                                vy: 0.0,
                                 item_type,
                                 emerging: true,
                                 emerge_y: by - TILE_SIZE,
@@ -1516,17 +1883,25 @@ impl Mari0Game {
                             self.score += COIN_SCORE;
                             self.coins += 1;
                             self.coin_popups.push(CoinPopup {
-                                x: bx, y: by - TILE_SIZE,
-                                vy: COIN_POPUP_SPEED, timer: 0.0,
+                                x: bx,
+                                y: by - TILE_SIZE,
+                                vy: COIN_POPUP_SPEED,
+                                timer: 0.0,
                             });
                             self.score_popups.push(ScorePopup {
-                                x: bx, y: by - TILE_SIZE,
-                                value: COIN_SCORE, timer: 0.0,
+                                x: bx,
+                                y: by - TILE_SIZE,
+                                value: COIN_SCORE,
+                                timer: 0.0,
                             });
                             ctx.audio.play("coin");
                         }
                     }
-                    self.block_bounces.push(BlockBounce { col: col as i32, row: row as i32, timer: 0.0 });
+                    self.block_bounces.push(BlockBounce {
+                        col: col as i32,
+                        row: row as i32,
+                        timer: 0.0,
+                    });
                     ctx.audio.play("blockhit");
                 }
             }
@@ -1560,7 +1935,9 @@ impl Mari0Game {
 
             // Gravity
             item.vy += GRAVITY * dt;
-            if item.vy > MAX_Y_SPEED { item.vy = MAX_Y_SPEED; }
+            if item.vy > MAX_Y_SPEED {
+                item.vy = MAX_Y_SPEED;
+            }
 
             let iw = TILE_SIZE;
             let ih = TILE_SIZE;
@@ -1627,7 +2004,16 @@ impl Mari0Game {
                 i += 1;
                 continue;
             }
-            if aabb_overlap(px, py, pw, ph, self.items[i].x, self.items[i].y, TILE_SIZE, TILE_SIZE) {
+            if aabb_overlap(
+                px,
+                py,
+                pw,
+                ph,
+                self.items[i].x,
+                self.items[i].y,
+                TILE_SIZE,
+                TILE_SIZE,
+            ) {
                 let item = self.items.remove(i);
                 match item.item_type {
                     ItemType::Mushroom => {
@@ -1636,8 +2022,10 @@ impl Mari0Game {
                         }
                         self.score += ITEM_SCORE;
                         self.score_popups.push(ScorePopup {
-                            x: item.x, y: item.y - TILE_SIZE,
-                            value: ITEM_SCORE, timer: 0.0,
+                            x: item.x,
+                            y: item.y - TILE_SIZE,
+                            value: ITEM_SCORE,
+                            timer: 0.0,
                         });
                         ctx.audio.play("mushroomeat");
                     }
@@ -1645,8 +2033,10 @@ impl Mari0Game {
                         self.star_timer = STAR_DURATION;
                         self.score += ITEM_SCORE;
                         self.score_popups.push(ScorePopup {
-                            x: item.x, y: item.y - TILE_SIZE,
-                            value: ITEM_SCORE, timer: 0.0,
+                            x: item.x,
+                            y: item.y - TILE_SIZE,
+                            value: ITEM_SCORE,
+                            timer: 0.0,
                         });
                         ctx.audio.play("mushroomeat");
                     }
@@ -1661,8 +2051,10 @@ impl Mari0Game {
                         self.player.is_fire = true;
                         self.score += ITEM_SCORE;
                         self.score_popups.push(ScorePopup {
-                            x: item.x, y: item.y - TILE_SIZE,
-                            value: ITEM_SCORE, timer: 0.0,
+                            x: item.x,
+                            y: item.y - TILE_SIZE,
+                            value: ITEM_SCORE,
+                            timer: 0.0,
                         });
                         ctx.audio.play("mushroomeat");
                     }
@@ -1690,7 +2082,9 @@ impl Mari0Game {
 
             // Gravity
             fb.vy += GRAVITY * dt;
-            if fb.vy > MAX_Y_SPEED { fb.vy = MAX_Y_SPEED; }
+            if fb.vy > MAX_Y_SPEED {
+                fb.vy = MAX_Y_SPEED;
+            }
 
             let fw = FIREBALL_SIZE;
             let fh = FIREBALL_SIZE;
@@ -1713,7 +2107,9 @@ impl Mari0Game {
                     }
                 }
             }
-            if fb.exploding { continue; }
+            if fb.exploding {
+                continue;
+            }
 
             // Vertical movement + ground bounce / ceiling
             fb.y += fb.vy * dt;
@@ -1743,16 +2139,27 @@ impl Mari0Game {
         let mut fb_explode = Vec::new();
         let mut enemy_kills = Vec::new();
         for (fi, fb) in self.fireballs.iter().enumerate() {
-            if fb.exploding { continue; }
+            if fb.exploding {
+                continue;
+            }
             for (ei, enemy) in self.enemies.iter().enumerate() {
-                if enemy.state == EnemyState::Dead || !enemy.activated { continue; }
+                if enemy.state == EnemyState::Dead || !enemy.activated {
+                    continue;
+                }
                 let eh = match enemy.enemy_type {
                     EnemyType::Koopa if enemy.state == EnemyState::Walking => 48.0,
                     _ => PLAYER_SMALL_H,
                 };
-                if aabb_overlap(fb.x, fb.y, FIREBALL_SIZE, FIREBALL_SIZE,
-                    enemy.x, enemy.y, PLAYER_SMALL_W, eh)
-                {
+                if aabb_overlap(
+                    fb.x,
+                    fb.y,
+                    FIREBALL_SIZE,
+                    FIREBALL_SIZE,
+                    enemy.x,
+                    enemy.y,
+                    PLAYER_SMALL_W,
+                    eh,
+                ) {
                     fb_explode.push(fi);
                     enemy_kills.push(ei);
                     break;
@@ -1765,17 +2172,21 @@ impl Mari0Game {
         }
         for &ei in &enemy_kills {
             self.enemies[ei].state = EnemyState::Dead;
-            self.enemies[ei].death_timer = 3.0;  // longer timer — flies off screen
+            self.enemies[ei].death_timer = 3.0; // longer timer — flies off screen
             self.enemies[ei].flipped_death = true;
-            self.enemies[ei].vy = -300.0;  // launch upward
+            self.enemies[ei].vy = -300.0; // launch upward
             self.score += 100;
         }
 
         // Remove expired fireballs
         let map_bottom = self.level.height as f32 * TILE_SIZE + 100.0;
         self.fireballs.retain(|fb| {
-            if fb.exploding && fb.explode_timer >= FIREBALL_EXPLODE_TIME { return false; }
-            if fb.y > map_bottom { return false; }
+            if fb.exploding && fb.explode_timer >= FIREBALL_EXPLODE_TIME {
+                return false;
+            }
+            if fb.y > map_bottom {
+                return false;
+            }
             true
         });
     }
@@ -1811,8 +2222,11 @@ impl Game for Mari0Game {
             portal_anim_frame: 0,
             enemies,
             camera: Camera { x: 0.0 },
-            score: 0, coins: 0, lives: 3,
-            combo_index: 0, combo_active: false,
+            score: 0,
+            coins: 0,
+            lives: 3,
+            combo_index: 0,
+            combo_active: false,
             time_remaining: time_limit,
             block_bounces: Vec::new(),
             coin_popups: Vec::new(),
@@ -1825,7 +2239,12 @@ impl Game for Mari0Game {
 
             tex_tiles: t("tiles"),
             tex_mario_layers: [t("mario0"), t("mario1"), t("mario2"), t("mario3")],
-            tex_mario_big_layers: [t("mario_big0"), t("mario_big1"), t("mario_big2"), t("mario_big3")],
+            tex_mario_big_layers: [
+                t("mario_big0"),
+                t("mario_big1"),
+                t("mario_big2"),
+                t("mario_big3"),
+            ],
             tex_goomba: t("goomba"),
             tex_koopa: t("koopa"),
             tex_coin_anim: t("coin_anim"),
@@ -1879,13 +2298,25 @@ impl Game for Mari0Game {
         let cam_x = self.camera.x;
 
         // Portal tint colors (convert sRGB → linear for GPU)
-        let portal_blue = Color { r: srgb_to_linear(0.3), g: srgb_to_linear(0.6), b: 1.0, a: 1.0 };
-        let portal_orange = Color { r: 1.0, g: srgb_to_linear(0.5), b: srgb_to_linear(0.0), a: 1.0 };
+        let portal_blue = Color {
+            r: srgb_to_linear(0.3),
+            g: srgb_to_linear(0.6),
+            b: 1.0,
+            a: 1.0,
+        };
+        let portal_orange = Color {
+            r: 1.0,
+            g: srgb_to_linear(0.5),
+            b: srgb_to_linear(0.0),
+            a: 1.0,
+        };
         let portal_colors = [portal_blue, portal_orange];
 
         // ── Emerging items (drawn BEHIND tiles so they appear from under blocks) ──
         for item in &self.items {
-            if !item.emerging { continue; }
+            if !item.emerging {
+                continue;
+            }
             let ix = item.x - cam_x;
             let iy = item.y;
             let dst = [ix, iy, TILE_SIZE, TILE_SIZE];
@@ -1912,7 +2343,9 @@ impl Game for Mari0Game {
         let end_col = ((cam_x + self.vw) / TILE_SIZE).ceil() as i32 + 1;
         for row in 0..self.level.height as i32 {
             for col in start_col..end_col.min(self.level.width as i32) {
-                if col < 0 { continue; }
+                if col < 0 {
+                    continue;
+                }
                 let tile_id = get_tile(&self.level, col, row);
                 if tile_id != SMB_EMPTY && tile_id != SMB_HIDDEN_BLOCK {
                     let x = col as f32 * TILE_SIZE - cam_x;
@@ -1934,7 +2367,13 @@ impl Game for Mari0Game {
         if self.level.flag_x > 0.0 {
             let fx = self.level.flag_x - cam_x;
             if fx > -TILE_SIZE && fx < self.vw + TILE_SIZE {
-                screen.draw_sprite(self.tex_flag, fx - TILE_SIZE, 3.0 * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                screen.draw_sprite(
+                    self.tex_flag,
+                    fx - TILE_SIZE,
+                    3.0 * TILE_SIZE,
+                    TILE_SIZE,
+                    TILE_SIZE,
+                );
             }
         }
 
@@ -1951,12 +2390,16 @@ impl Game for Mari0Game {
         // ── Portals (animated, matches original mari0 portal.png layout) ──
         for (i, portal_opt) in self.portals.iter().enumerate() {
             if let Some(portal) = portal_opt {
-                if !portal.active { continue; }
+                if !portal.active {
+                    continue;
+                }
                 let px = portal.x - cam_x;
                 let py = portal.y;
                 let color = portal_colors[i];
                 let scale = portal.open_scale;
-                if scale <= 0.0 { continue; }
+                if scale <= 0.0 {
+                    continue;
+                }
 
                 // Animation frame (0..5 maps to original 1-indexed frames 1..6)
                 let frame_y = (self.portal_anim_frame + 1) as f32; // y offset in strip units
@@ -1965,12 +2408,7 @@ impl Game for Mari0Game {
                     Orientation::Left | Orientation::Right => {
                         // Vertical portal: use portal_v.png (32×64, pre-rotated)
                         // UV: x = (frame+1)*4/32, y = portal_idx*0.5, w = 4/32, h = 0.5
-                        let src = [
-                            frame_y * (4.0 / 32.0),
-                            i as f32 * 0.5,
-                            4.0 / 32.0,
-                            0.5,
-                        ];
+                        let src = [frame_y * (4.0 / 32.0), i as f32 * 0.5, 4.0 / 32.0, 0.5];
                         let h = 64.0 * scale;
                         let dst = [px - 4.0, py - h / 2.0, 8.0, h];
                         screen.draw_sprite_region_tinted(self.tex_portal_v, src, dst, color);
@@ -1978,12 +2416,7 @@ impl Game for Mari0Game {
                     Orientation::Up | Orientation::Down => {
                         // Horizontal portal: use portal.png (64×32)
                         // UV: x = portal_idx*0.5, y = (frame+1)*4/32, w = 0.5, h = 4/32
-                        let src = [
-                            i as f32 * 0.5,
-                            frame_y * (4.0 / 32.0),
-                            0.5,
-                            4.0 / 32.0,
-                        ];
+                        let src = [i as f32 * 0.5, frame_y * (4.0 / 32.0), 0.5, 4.0 / 32.0];
                         let w = 64.0 * scale;
                         let dst = [px - w / 2.0, py - 4.0, w, 8.0];
                         screen.draw_sprite_region_tinted(self.tex_portal, src, dst, color);
@@ -2008,11 +2441,23 @@ impl Game for Mari0Game {
                         match enemy.enemy_type {
                             EnemyType::Goomba => {
                                 let src = goomba_uv(0, 0);
-                                screen.draw_sprite_region_flipped(self.tex_goomba, src, dst, false, true);
+                                screen.draw_sprite_region_flipped(
+                                    self.tex_goomba,
+                                    src,
+                                    dst,
+                                    false,
+                                    true,
+                                );
                             }
                             EnemyType::Koopa => {
                                 let src = koopa_uv(0, 0);
-                                screen.draw_sprite_region_flipped(self.tex_koopa, src, dst, false, true);
+                                screen.draw_sprite_region_flipped(
+                                    self.tex_koopa,
+                                    src,
+                                    dst,
+                                    false,
+                                    true,
+                                );
                             }
                         }
                     } else {
@@ -2037,7 +2482,13 @@ impl Game for Mari0Game {
                             let src = goomba_uv(0, 0);
                             let flip = ((enemy.anim_timer * 5.0) as u32) % 2 == 1;
                             if flip {
-                                screen.draw_sprite_region_flipped(self.tex_goomba, src, dst, true, false);
+                                screen.draw_sprite_region_flipped(
+                                    self.tex_goomba,
+                                    src,
+                                    dst,
+                                    true,
+                                    false,
+                                );
                             } else {
                                 screen.draw_sprite_region(self.tex_goomba, src, dst);
                             }
@@ -2046,7 +2497,13 @@ impl Game for Mari0Game {
                             let frame = ((enemy.anim_timer * 4.0) as u32) % 2;
                             let src = koopa_uv(frame, 0);
                             if enemy.facing_right {
-                                screen.draw_sprite_region_flipped(self.tex_koopa, src, dst, true, false);
+                                screen.draw_sprite_region_flipped(
+                                    self.tex_koopa,
+                                    src,
+                                    dst,
+                                    true,
+                                    false,
+                                );
                             } else {
                                 screen.draw_sprite_region(self.tex_koopa, src, dst);
                             }
@@ -2058,7 +2515,9 @@ impl Game for Mari0Game {
 
         // ── Items (mushroom, star, 1-up) — only non-emerging (emerging drawn behind tiles) ──
         for item in &self.items {
-            if item.emerging { continue; }
+            if item.emerging {
+                continue;
+            }
             let ix = item.x - cam_x;
             let iy = item.y;
             let dst = [ix, iy, TILE_SIZE, TILE_SIZE];
@@ -2086,7 +2545,12 @@ impl Game for Mari0Game {
             let fy = fb.y;
             if fb.exploding {
                 let frame = ((fb.explode_timer / FIREBALL_ANIM_DELAY) as u32).min(2);
-                let dst = [fx - FIREBALL_SIZE * 0.5, fy - FIREBALL_SIZE * 0.5, TILE_SIZE, TILE_SIZE];
+                let dst = [
+                    fx - FIREBALL_SIZE * 0.5,
+                    fy - FIREBALL_SIZE * 0.5,
+                    TILE_SIZE,
+                    TILE_SIZE,
+                ];
                 screen.draw_sprite_region(self.tex_fireball, fireball_explode_uv(frame), dst);
             } else {
                 let frame = ((fb.anim_timer / FIREBALL_ANIM_DELAY) as u32) % 4;
@@ -2099,13 +2563,20 @@ impl Game for Mari0Game {
         let coin_frame = ((self.time_remaining * 8.0) as u32) % 2;
         let coin_src = coin_frame_uv(coin_frame);
         for popup in &self.coin_popups {
-            let cx = popup.x - cam_x + 8.0;  // center 16px coin in 32px tile
+            let cx = popup.x - cam_x + 8.0; // center 16px coin in 32px tile
             let cy = popup.y + 8.0;
             let alpha = 1.0 - (popup.timer / COIN_POPUP_TIME).min(1.0);
-            let color = Color { r: 1.0, g: 1.0, b: 1.0, a: alpha };
+            let color = Color {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: alpha,
+            };
             screen.draw_sprite_region_tinted(
-                self.tex_coin_anim, coin_src,
-                [cx, cy, 16.0, 16.0], color,
+                self.tex_coin_anim,
+                coin_src,
+                [cx, cy, 16.0, 16.0],
+                color,
             );
         }
 
@@ -2117,13 +2588,17 @@ impl Game for Mari0Game {
             let quarter_uv = smb_tile_uv(SMB_BRICK);
             let half_w = TILE_SIZE * 0.5;
             screen.draw_sprite_region(
-                self.tex_tiles, quarter_uv,
+                self.tex_tiles,
+                quarter_uv,
                 [dx - half_w * 0.5, dy - half_w * 0.5, half_w, half_w],
             );
         }
 
         // ── Player ──
-        if self.state == GameState::Playing || self.state == GameState::Dead || self.state == GameState::LevelComplete {
+        if self.state == GameState::Playing
+            || self.state == GameState::Dead
+            || self.state == GameState::LevelComplete
+        {
             let visible = self.player.invincible_timer <= 0.0
                 || ((self.player.invincible_timer * 10.0) as u32 % 2 == 0);
             if visible {
@@ -2132,11 +2607,14 @@ impl Game for Mari0Game {
                 // Compute angle from vertical ("up"): acos(-sin(crosshair_angle))
                 // Use -sin(angle) as the "up-component" and compare to cos(π/8) thresholds
                 let up_comp = -self.crosshair_angle.sin();
-                let angle_row: u32 = if up_comp > 0.924 {   // < π/8 from vertical
+                let angle_row: u32 = if up_comp > 0.924 {
+                    // < π/8 from vertical
                     0
-                } else if up_comp > 0.383 {                  // < 3π/8
+                } else if up_comp > 0.383 {
+                    // < 3π/8
                     1
-                } else if up_comp > -0.383 {                  // < 5π/8
+                } else if up_comp > -0.383 {
+                    // < 5π/8
                     2
                 } else {
                     3
@@ -2181,15 +2659,45 @@ impl Game for Mari0Game {
                 // Colors are sRGB values from original mari0; convert to linear for GPU tint multiplication
                 let mario_colors = if self.player.is_fire {
                     [
-                        Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 }, // layer1: white shirt (fire)
-                        Color { r: srgb_to_linear(224.0/255.0), g: srgb_to_linear( 32.0/255.0), b: srgb_to_linear(  0.0/255.0), a: 1.0 }, // layer2: red overalls
-                        Color { r: srgb_to_linear(252.0/255.0), g: srgb_to_linear(152.0/255.0), b: srgb_to_linear( 56.0/255.0), a: 1.0 }, // layer3: skin
+                        Color {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            a: 1.0,
+                        }, // layer1: white shirt (fire)
+                        Color {
+                            r: srgb_to_linear(224.0 / 255.0),
+                            g: srgb_to_linear(32.0 / 255.0),
+                            b: srgb_to_linear(0.0 / 255.0),
+                            a: 1.0,
+                        }, // layer2: red overalls
+                        Color {
+                            r: srgb_to_linear(252.0 / 255.0),
+                            g: srgb_to_linear(152.0 / 255.0),
+                            b: srgb_to_linear(56.0 / 255.0),
+                            a: 1.0,
+                        }, // layer3: skin
                     ]
                 } else {
                     [
-                        Color { r: srgb_to_linear(224.0/255.0), g: srgb_to_linear( 32.0/255.0), b: srgb_to_linear(  0.0/255.0), a: 1.0 }, // layer1: red shirt
-                        Color { r: srgb_to_linear(136.0/255.0), g: srgb_to_linear(112.0/255.0), b: srgb_to_linear(  0.0/255.0), a: 1.0 }, // layer2: brown
-                        Color { r: srgb_to_linear(252.0/255.0), g: srgb_to_linear(152.0/255.0), b: srgb_to_linear( 56.0/255.0), a: 1.0 }, // layer3: skin
+                        Color {
+                            r: srgb_to_linear(224.0 / 255.0),
+                            g: srgb_to_linear(32.0 / 255.0),
+                            b: srgb_to_linear(0.0 / 255.0),
+                            a: 1.0,
+                        }, // layer1: red shirt
+                        Color {
+                            r: srgb_to_linear(136.0 / 255.0),
+                            g: srgb_to_linear(112.0 / 255.0),
+                            b: srgb_to_linear(0.0 / 255.0),
+                            a: 1.0,
+                        }, // layer2: brown
+                        Color {
+                            r: srgb_to_linear(252.0 / 255.0),
+                            g: srgb_to_linear(152.0 / 255.0),
+                            b: srgb_to_linear(56.0 / 255.0),
+                            a: 1.0,
+                        }, // layer3: skin
                     ]
                 };
                 let layers = if self.player.is_big {
@@ -2203,7 +2711,8 @@ impl Game for Mari0Game {
                     if face_right {
                         screen.draw_sprite_region_tinted(tex, src, dst, *color);
                     } else {
-                        screen.draw_sprite_region_flipped_tinted(tex, src, dst, true, false, *color);
+                        screen
+                            .draw_sprite_region_flipped_tinted(tex, src, dst, true, false, *color);
                     }
                 }
                 // Layer 0 (outline) drawn last, white tint (as-is)
@@ -2221,18 +2730,31 @@ impl Game for Mari0Game {
 
             // Trail: 5 fading copies behind the projectile
             let half_color = Color {
-                r: color.r * 0.5, g: color.g * 0.5, b: color.b * 0.5, a: color.a,
+                r: color.r * 0.5,
+                g: color.g * 0.5,
+                b: color.b * 0.5,
+                a: color.a,
             };
             for ti in (1..=5).rev() {
                 let t = ti as f32 * 0.008; // 8ms apart
                 let tx = proj.x - proj.vx * t - cam_x;
                 let ty = proj.y - proj.vy * t;
                 let alpha = 0.6 - ti as f32 * 0.12;
-                if alpha <= 0.0 { continue; }
-                let tc = Color { r: half_color.r, g: half_color.g, b: half_color.b, a: alpha };
+                if alpha <= 0.0 {
+                    continue;
+                }
+                let tc = Color {
+                    r: half_color.r,
+                    g: half_color.g,
+                    b: half_color.b,
+                    a: alpha,
+                };
                 screen.draw_sprite_tinted(
                     self.tex_portal_projectile,
-                    tx - 5.0, ty - 5.0, 10.0, 10.0,
+                    tx - 5.0,
+                    ty - 5.0,
+                    10.0,
+                    10.0,
                     tc,
                 );
             }
@@ -2240,7 +2762,10 @@ impl Game for Mari0Game {
             // Main projectile orb (8×8 source at 2x scale = 16×16)
             screen.draw_sprite_tinted(
                 self.tex_portal_projectile,
-                proj.x - cam_x - 8.0, proj.y - 8.0, 16.0, 16.0,
+                proj.x - cam_x - 8.0,
+                proj.y - 8.0,
+                16.0,
+                16.0,
                 color,
             );
         }
@@ -2261,7 +2786,11 @@ impl Game for Mari0Game {
             let portal_possible = matches!(hit_info, Some((_, true)));
 
             // Dot color: green if portal can be placed, red otherwise (original: setColor)
-            let dot_rgb = if portal_possible { (0.0_f32, 1.0_f32, 0.0_f32) } else { (1.0, 0.0, 0.0) };
+            let dot_rgb = if portal_possible {
+                (0.0_f32, 1.0_f32, 0.0_f32)
+            } else {
+                (1.0, 0.0, 0.0)
+            };
 
             // Distance in pixels from source to endpoint
             let dx_px = end_x - source_x;
@@ -2277,7 +2806,9 @@ impl Game for Mari0Game {
 
             for i in 0..dot_count {
                 let t = ((i as f32) + phase) / (dist_tiles / 1.2).max(1.0);
-                if t >= 1.0 { continue; }
+                if t >= 1.0 {
+                    continue;
+                }
 
                 // Dot position in screen coords
                 let dot_screen_x = (source_x - cam_x) + dx_px * t;
@@ -2290,12 +2821,18 @@ impl Game for Mari0Game {
                 // Alpha fade near source (original: radius in base pixels)
                 let radius = (xplus * xplus + yplus * yplus).sqrt() / SCALE;
                 let mut alpha = 1.0_f32;
-                if radius < 70.0 { // portaldotsouter
+                if radius < 70.0 {
+                    // portaldotsouter
                     // Original: alpha = (radius-inner)*(outer-inner), clamped
                     alpha = ((radius - 10.0) / (70.0 - 10.0)).clamp(0.0, 1.0);
                 }
 
-                let dot_color = Color { r: dot_rgb.0, g: dot_rgb.1, b: dot_rgb.2, a: alpha };
+                let dot_color = Color {
+                    r: dot_rgb.0,
+                    g: dot_rgb.1,
+                    b: dot_rgb.2,
+                    a: alpha,
+                };
 
                 // Dot size = scale×scale = 2×2 pixels, offset -0.25*scale (original)
                 let off = 0.25 * SCALE; // 0.5
@@ -2303,14 +2840,20 @@ impl Game for Mari0Game {
                     self.tex_portal_dot,
                     (dot_screen_x - off).floor(),
                     (dot_screen_y - off).floor(),
-                    SCALE, SCALE,
+                    SCALE,
+                    SCALE,
                     dot_color,
                 );
             }
 
             // Crosshair only drawn when a wall is hit (original: if cox ~= false)
             if let Some((orient, _)) = hit_info {
-                let ch_color = Color { r: dot_rgb.0, g: dot_rgb.1, b: dot_rgb.2, a: 1.0 };
+                let ch_color = Color {
+                    r: dot_rgb.0,
+                    g: dot_rgb.1,
+                    b: dot_rgb.2,
+                    a: 1.0,
+                };
                 let ch_screen_x = end_x - cam_x;
                 let ch_screen_y = end_y;
 
@@ -2343,8 +2886,10 @@ impl Game for Mari0Game {
 
                 screen.draw_sprite_tinted(
                     self.tex_portal_crosshair,
-                    cx.floor(), cy.floor(),
-                    ch_w, ch_h,
+                    cx.floor(),
+                    cy.floor(),
+                    ch_w,
+                    ch_h,
                     ch_color,
                 );
             }
@@ -2377,12 +2922,12 @@ impl Game for Mari0Game {
             GameState::Menu => {
                 // NES-style HUD on menu too
                 if let Some(font) = hud_font {
-                    screen.draw_text(font, "MARIO",     24.0,  8.0);
+                    screen.draw_text(font, "MARIO", 24.0, 8.0);
                     screen.draw_text(font, &format!("{:06}", self.score), 24.0, 20.0);
                     screen.draw_text(font, &format!("x{:02}", self.coins), 180.0, 20.0);
-                    screen.draw_text(font, "WORLD",    312.0,  8.0);
-                    screen.draw_text(font, "1-1",      320.0, 20.0);
-                    screen.draw_text(font, "TIME",     432.0,  8.0);
+                    screen.draw_text(font, "WORLD", 312.0, 8.0);
+                    screen.draw_text(font, "1-1", 320.0, 20.0);
+                    screen.draw_text(font, "TIME", 432.0, 8.0);
                 }
                 if let Some(font) = title_font {
                     screen.draw_text_centered(font, "MARI0", 100.0);
@@ -2397,22 +2942,27 @@ impl Game for Mari0Game {
             }
             GameState::Playing => {
                 if let Some(font) = hud_font {
-                    screen.draw_text(font, "MARIO",     24.0,  8.0);
+                    screen.draw_text(font, "MARIO", 24.0, 8.0);
                     screen.draw_text(font, &format!("{:06}", self.score), 24.0, 20.0);
                     screen.draw_text(font, &format!("x{:02}", self.coins), 180.0, 20.0);
-                    screen.draw_text(font, "WORLD",    312.0,  8.0);
-                    screen.draw_text(font, "1-1",      320.0, 20.0);
-                    screen.draw_text(font, "TIME",     432.0,  8.0);
-                    screen.draw_text(font, &format!("{}", self.time_remaining as u32), 440.0, 20.0);
+                    screen.draw_text(font, "WORLD", 312.0, 8.0);
+                    screen.draw_text(font, "1-1", 320.0, 20.0);
+                    screen.draw_text(font, "TIME", 432.0, 8.0);
+                    screen.draw_text(
+                        font,
+                        &format!("{}", self.time_remaining as u32),
+                        440.0,
+                        20.0,
+                    );
                 }
             }
             GameState::Dead => {
                 if let Some(font) = hud_font {
-                    screen.draw_text(font, "MARIO",     24.0,  8.0);
+                    screen.draw_text(font, "MARIO", 24.0, 8.0);
                     screen.draw_text(font, &format!("{:06}", self.score), 24.0, 20.0);
                     screen.draw_text(font, &format!("x{:02}", self.coins), 180.0, 20.0);
-                    screen.draw_text(font, "WORLD",    312.0,  8.0);
-                    screen.draw_text(font, "1-1",      320.0, 20.0);
+                    screen.draw_text(font, "WORLD", 312.0, 8.0);
+                    screen.draw_text(font, "1-1", 320.0, 20.0);
                 }
                 if let Some(font) = title_font {
                     if self.lives > 0 {
@@ -2429,11 +2979,11 @@ impl Game for Mari0Game {
             }
             GameState::LevelComplete => {
                 if let Some(font) = hud_font {
-                    screen.draw_text(font, "MARIO",     24.0,  8.0);
+                    screen.draw_text(font, "MARIO", 24.0, 8.0);
                     screen.draw_text(font, &format!("{:06}", self.score), 24.0, 20.0);
                     screen.draw_text(font, &format!("x{:02}", self.coins), 180.0, 20.0);
-                    screen.draw_text(font, "WORLD",    312.0,  8.0);
-                    screen.draw_text(font, "1-1",      320.0, 20.0);
+                    screen.draw_text(font, "WORLD", 312.0, 8.0);
+                    screen.draw_text(font, "1-1", 320.0, 20.0);
                 }
                 if let Some(font) = title_font {
                     screen.draw_text_centered(font, "LEVEL COMPLETE!", 150.0);
@@ -2497,46 +3047,62 @@ impl Game for Mari0Game {
             })
         }).collect();
 
-        let coins: Vec<serde_json::Value> = self.level.coins.iter().map(|c| {
-            serde_json::json!({"x": c.x, "y": c.y, "collected": c.collected})
-        }).collect();
+        let coins: Vec<serde_json::Value> = self
+            .level
+            .coins
+            .iter()
+            .map(|c| serde_json::json!({"x": c.x, "y": c.y, "collected": c.collected}))
+            .collect();
 
-        let projectiles: Vec<serde_json::Value> = self.projectiles.iter().map(|p| {
-            serde_json::json!({
-                "x": p.x, "y": p.y, "vx": p.vx, "vy": p.vy,
-                "color": if p.portal_index == 0 { "blue" } else { "orange" },
+        let projectiles: Vec<serde_json::Value> = self
+            .projectiles
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "x": p.x, "y": p.y, "vx": p.vx, "vy": p.vy,
+                    "color": if p.portal_index == 0 { "blue" } else { "orange" },
+                })
             })
-        }).collect();
+            .collect();
 
-        let items: Vec<serde_json::Value> = self.items.iter().map(|item| {
-            serde_json::json!({
-                "type": match item.item_type {
-                    ItemType::Mushroom => "mushroom",
-                    ItemType::Star => "star",
-                    ItemType::OneUp => "1up",
-                    ItemType::FireFlower => "fire_flower",
-                },
-                "x": item.x, "y": item.y,
-                "vx": item.vx, "vy": item.vy,
-                "emerging": item.emerging,
+        let items: Vec<serde_json::Value> = self
+            .items
+            .iter()
+            .map(|item| {
+                serde_json::json!({
+                    "type": match item.item_type {
+                        ItemType::Mushroom => "mushroom",
+                        ItemType::Star => "star",
+                        ItemType::OneUp => "1up",
+                        ItemType::FireFlower => "fire_flower",
+                    },
+                    "x": item.x, "y": item.y,
+                    "vx": item.vx, "vy": item.vy,
+                    "emerging": item.emerging,
+                })
             })
-        }).collect();
+            .collect();
 
-        let block_contents: Vec<serde_json::Value> = self.level.block_contents.iter().map(|((row, col), content)| {
-            serde_json::json!({
-                "row": row, "col": col,
-                "x": *col as f32 * TILE_SIZE,
-                "y": *row as f32 * TILE_SIZE,
-                "content": match content {
-                    BlockContent::Coin => "coin",
-                    BlockContent::MultiCoin(_) => "multi_coin",
-                    BlockContent::Mushroom => "mushroom",
-                    BlockContent::Star => "star",
-                    BlockContent::OneUp => "1up",
-                    BlockContent::FireFlower => "fire_flower",
-                },
+        let block_contents: Vec<serde_json::Value> = self
+            .level
+            .block_contents
+            .iter()
+            .map(|((row, col), content)| {
+                serde_json::json!({
+                    "row": row, "col": col,
+                    "x": *col as f32 * TILE_SIZE,
+                    "y": *row as f32 * TILE_SIZE,
+                    "content": match content {
+                        BlockContent::Coin => "coin",
+                        BlockContent::MultiCoin(_) => "multi_coin",
+                        BlockContent::Mushroom => "mushroom",
+                        BlockContent::Star => "star",
+                        BlockContent::OneUp => "1up",
+                        BlockContent::FireFlower => "fire_flower",
+                    },
+                })
             })
-        }).collect();
+            .collect();
 
         serde_json::json!({
             "state": state_str,
@@ -2583,7 +3149,11 @@ impl Game for Mari0Game {
     }
 
     #[cfg(feature = "vdp")]
-    fn handle_vdp(&mut self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value, String> {
+    fn handle_vdp(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         match method {
             "game.reset" => {
                 self.state = GameState::Playing;
@@ -2594,9 +3164,13 @@ impl Game for Mari0Game {
                 Ok(serde_json::json!({"status": "ok"}))
             }
             "game.setPlayerPos" => {
-                let x = params.get("x").and_then(|v| v.as_f64())
+                let x = params
+                    .get("x")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'x'")?;
-                let y = params.get("y").and_then(|v| v.as_f64())
+                let y = params
+                    .get("y")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'y'")?;
                 self.player.x = x as f32;
                 self.player.y = y as f32;
@@ -2610,7 +3184,9 @@ impl Game for Mari0Game {
                     "vx": self.player.vx, "vy": self.player.vy}))
             }
             "game.setPlayerSize" => {
-                let size = params.get("size").and_then(|v| v.as_str())
+                let size = params
+                    .get("size")
+                    .and_then(|v| v.as_str())
                     .ok_or("Missing 'size'")?;
                 match size {
                     "big" => self.player.set_size(true),
@@ -2620,7 +3196,9 @@ impl Game for Mari0Game {
                 Ok(serde_json::json!({"is_big": self.player.is_big}))
             }
             "game.setState" => {
-                let state = params.get("state").and_then(|v| v.as_str())
+                let state = params
+                    .get("state")
+                    .and_then(|v| v.as_str())
                     .ok_or("Missing 'state'")?;
                 match state {
                     "menu" => self.state = GameState::Menu,
@@ -2641,17 +3219,29 @@ impl Game for Mari0Game {
                 if let Some(l) = params.get("lives").and_then(|v| v.as_u64()) {
                     self.lives = l as u32;
                 }
-                Ok(serde_json::json!({"score": self.score, "coins": self.coins, "lives": self.lives}))
+                Ok(
+                    serde_json::json!({"score": self.score, "coins": self.coins, "lives": self.lives}),
+                )
             }
             "game.setPortal" => {
-                let index = params.get("index").and_then(|v| v.as_u64())
+                let index = params
+                    .get("index")
+                    .and_then(|v| v.as_u64())
                     .ok_or("Missing 'index'")? as usize;
-                if index > 1 { return Err("index must be 0 or 1".into()); }
-                let x = params.get("x").and_then(|v| v.as_f64())
+                if index > 1 {
+                    return Err("index must be 0 or 1".into());
+                }
+                let x = params
+                    .get("x")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'x'")? as f32;
-                let y = params.get("y").and_then(|v| v.as_f64())
+                let y = params
+                    .get("y")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'y'")? as f32;
-                let orient_str = params.get("orientation").and_then(|v| v.as_str())
+                let orient_str = params
+                    .get("orientation")
+                    .and_then(|v| v.as_str())
                     .ok_or("Missing 'orientation'")?;
                 let orientation = match orient_str {
                     "up" => Orientation::Up,
@@ -2660,8 +3250,17 @@ impl Game for Mari0Game {
                     "right" => Orientation::Right,
                     _ => return Err(format!("Unknown orientation: {}", orient_str)),
                 };
-                let active = params.get("active").and_then(|v| v.as_bool()).unwrap_or(true);
-                self.portals[index] = Some(Portal { x, y, orientation, active, open_scale: 1.0 });
+                let active = params
+                    .get("active")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                self.portals[index] = Some(Portal {
+                    x,
+                    y,
+                    orientation,
+                    active,
+                    open_scale: 1.0,
+                });
                 Ok(serde_json::json!({"index": index, "x": x, "y": y,
                     "orientation": orient_str, "active": active}))
             }
@@ -2670,27 +3269,41 @@ impl Game for Mari0Game {
                 Ok(serde_json::json!({"status": "ok"}))
             }
             "game.spawnEnemy" => {
-                let etype_str = params.get("type").and_then(|v| v.as_str())
+                let etype_str = params
+                    .get("type")
+                    .and_then(|v| v.as_str())
                     .ok_or("Missing 'type'")?;
                 let etype = match etype_str {
                     "goomba" => EnemyType::Goomba,
                     "koopa" => EnemyType::Koopa,
                     _ => return Err(format!("Unknown enemy type: {}", etype_str)),
                 };
-                let x = params.get("x").and_then(|v| v.as_f64())
+                let x = params
+                    .get("x")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'x'")? as f32;
-                let y = params.get("y").and_then(|v| v.as_f64())
+                let y = params
+                    .get("y")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'y'")? as f32;
-                let facing_right = params.get("facing_right").and_then(|v| v.as_bool()).unwrap_or(false);
+                let facing_right = params
+                    .get("facing_right")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 self.enemies.push(Enemy {
-                    x, y,
-                    vx: if facing_right { ENEMY_SPEED } else { -ENEMY_SPEED },
+                    x,
+                    y,
+                    vx: if facing_right {
+                        ENEMY_SPEED
+                    } else {
+                        -ENEMY_SPEED
+                    },
                     vy: 0.0,
                     enemy_type: etype,
                     state: EnemyState::Walking,
                     facing_right,
                     on_ground: false,
-                    activated: true,  // VDP-spawned enemies are always active
+                    activated: true, // VDP-spawned enemies are always active
                     anim_timer: 0.0,
                     death_timer: 0.0,
                     flipped_death: false,
@@ -2702,14 +3315,20 @@ impl Game for Mari0Game {
                 Ok(serde_json::json!({"status": "ok"}))
             }
             "game.setTile" => {
-                let col = params.get("col").and_then(|v| v.as_i64())
+                let col = params
+                    .get("col")
+                    .and_then(|v| v.as_i64())
                     .ok_or("Missing 'col'")? as usize;
-                let row = params.get("row").and_then(|v| v.as_i64())
+                let row = params
+                    .get("row")
+                    .and_then(|v| v.as_i64())
                     .ok_or("Missing 'row'")? as usize;
                 if row >= self.level.height || col >= self.level.width {
                     return Err("Tile position out of bounds".into());
                 }
-                let type_str = params.get("type").and_then(|v| v.as_str())
+                let type_str = params
+                    .get("type")
+                    .and_then(|v| v.as_str())
                     .ok_or("Missing 'type'")?;
                 let tile_id: u32 = match type_str {
                     "empty" => SMB_EMPTY,
@@ -2724,7 +3343,8 @@ impl Game for Mari0Game {
                     "pipe_br" => SMB_PIPE_BR,
                     _ => {
                         // Try parsing as raw tile ID number
-                        type_str.parse::<u32>()
+                        type_str
+                            .parse::<u32>()
                             .map_err(|_| format!("Unknown tile type: {}", type_str))?
                     }
                 };

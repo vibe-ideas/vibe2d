@@ -16,8 +16,8 @@ struct SpriteVertex {
 #[derive(Clone, Copy)]
 pub struct DrawCommand {
     pub texture_id: crate::TextureId,
-    pub src_rect: [f32; 4],   // x, y, w, h in UV coordinates (0..1)
-    pub dst_rect: [f32; 4],   // x, y, w, h in virtual pixels
+    pub src_rect: [f32; 4], // x, y, w, h in UV coordinates (0..1)
+    pub dst_rect: [f32; 4], // x, y, w, h in virtual pixels
     pub color: [f32; 4],
     pub flip_x: bool,
     pub flip_y: bool,
@@ -333,10 +333,7 @@ impl Renderer {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(
-            self.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
 
         let mut current_texture: Option<usize> = None;
         let mut batch_start: u32 = 0;
@@ -375,13 +372,19 @@ impl Renderer {
     }
 
     /// Capture the current frame to a PNG file.
-    fn capture_screenshot(&self, clear_color: [f32; 4], textures: &[&Texture], path: &std::path::Path) {
+    fn capture_screenshot(
+        &self,
+        clear_color: [f32; 4],
+        textures: &[&Texture],
+        path: &std::path::Path,
+    ) {
         let vw = self.virtual_width as u32;
         let vh = self.virtual_height as u32;
         let bytes_per_pixel = 4u32;
         let unpadded_bytes_per_row = vw * bytes_per_pixel;
         let align = 256u32;
-        let padded_bytes_per_row = (unpadded_bytes_per_row + align - 1) / align * align;
+        // Round up `unpadded_bytes_per_row` to the wgpu-required 256B alignment.
+        let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
 
         let offscreen_tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("screenshot_texture"),

@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::Deserialize;
+use std::collections::HashMap;
 pub use winit::keyboard::KeyCode;
 
 /// Mouse button identifiers.
@@ -152,16 +152,23 @@ impl InputState {
     }
 
     pub fn is_mouse_button_just_pressed(&self, button: MouseButton) -> bool {
-        self.mouse_just_pressed.get(&button).copied().unwrap_or(false)
+        self.mouse_just_pressed
+            .get(&button)
+            .copied()
+            .unwrap_or(false)
     }
 
     // ── Action queries (keyboard + mouse) ──
 
     /// Check if an action (defined in game.yaml) was just pressed this frame.
     pub fn is_action_just_pressed(&self, action: &str) -> bool {
-        let key_match = self.actions.get(action)
+        let key_match = self
+            .actions
+            .get(action)
             .is_some_and(|keys| keys.iter().any(|k| self.is_key_just_pressed(*k)));
-        let mouse_match = self.mouse_actions.get(action)
+        let mouse_match = self
+            .mouse_actions
+            .get(action)
             .is_some_and(|btns| btns.iter().any(|b| self.is_mouse_button_just_pressed(*b)));
         key_match || mouse_match
     }
@@ -198,9 +205,13 @@ impl InputState {
 
     /// Check if an action is currently held down.
     pub fn is_action_pressed(&self, action: &str) -> bool {
-        let key_match = self.actions.get(action)
+        let key_match = self
+            .actions
+            .get(action)
             .is_some_and(|keys| keys.iter().any(|k| self.is_key_pressed(*k)));
-        let mouse_match = self.mouse_actions.get(action)
+        let mouse_match = self
+            .mouse_actions
+            .get(action)
             .is_some_and(|btns| btns.iter().any(|b| self.is_mouse_button_pressed(*b)));
         key_match || mouse_match
     }
@@ -237,5 +248,199 @@ pub fn string_to_mouse_button(s: &str) -> Option<MouseButton> {
         "Right" => Some(MouseButton::Right),
         "Middle" => Some(MouseButton::Middle),
         _ => None,
+    }
+}
+
+impl Default for InputState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Unit tests — pure logic, no winit event loop required
+// ─────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_action_config(keys: &[&str], mouse_buttons: &[&str]) -> ActionConfig {
+        ActionConfig {
+            keys: keys.iter().map(|s| s.to_string()).collect(),
+            mouse_buttons: mouse_buttons.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn string_to_keycode_known_keys() {
+        assert_eq!(string_to_keycode("Space"), Some(KeyCode::Space));
+        assert_eq!(string_to_keycode("Enter"), Some(KeyCode::Enter));
+        assert_eq!(string_to_keycode("Return"), Some(KeyCode::Enter));
+        assert_eq!(string_to_keycode("Escape"), Some(KeyCode::Escape));
+        assert_eq!(string_to_keycode("Up"), Some(KeyCode::ArrowUp));
+        assert_eq!(string_to_keycode("Down"), Some(KeyCode::ArrowDown));
+        assert_eq!(string_to_keycode("Left"), Some(KeyCode::ArrowLeft));
+        assert_eq!(string_to_keycode("Right"), Some(KeyCode::ArrowRight));
+        assert_eq!(string_to_keycode("A"), Some(KeyCode::KeyA));
+        assert_eq!(string_to_keycode("W"), Some(KeyCode::KeyW));
+        assert_eq!(string_to_keycode("ShiftLeft"), Some(KeyCode::ShiftLeft));
+    }
+
+    #[test]
+    fn string_to_keycode_unknown_returns_none() {
+        assert_eq!(string_to_keycode("F1"), None);
+        assert_eq!(string_to_keycode(""), None);
+        assert_eq!(string_to_keycode("space"), None); // case-sensitive
+    }
+
+    #[test]
+    fn string_to_mouse_button_known() {
+        assert_eq!(string_to_mouse_button("Left"), Some(MouseButton::Left));
+        assert_eq!(string_to_mouse_button("Right"), Some(MouseButton::Right));
+        assert_eq!(string_to_mouse_button("Middle"), Some(MouseButton::Middle));
+        assert_eq!(string_to_mouse_button("X"), None);
+    }
+
+    #[test]
+    fn key_press_sets_pressed_and_just_pressed() {
+        let mut input = InputState::new();
+        input.on_key_pressed(KeyCode::Space);
+        assert!(input.is_key_pressed(KeyCode::Space));
+        assert!(input.is_key_just_pressed(KeyCode::Space));
+    }
+
+    #[test]
+    fn key_just_pressed_clears_after_begin_frame() {
+        let mut input = InputState::new();
+        input.on_key_pressed(KeyCode::Space);
+        assert!(input.is_key_just_pressed(KeyCode::Space));
+        input.begin_frame();
+        // Still held, but no longer "just" pressed
+        assert!(input.is_key_pressed(KeyCode::Space));
+        assert!(!input.is_key_just_pressed(KeyCode::Space));
+    }
+
+    #[test]
+    fn key_release_clears_pressed() {
+        let mut input = InputState::new();
+        input.on_key_pressed(KeyCode::KeyA);
+        input.begin_frame();
+        input.on_key_released(KeyCode::KeyA);
+        assert!(!input.is_key_pressed(KeyCode::KeyA));
+    }
+
+    #[test]
+    fn key_repeated_press_does_not_retrigger_just_pressed() {
+        let mut input = InputState::new();
+        input.on_key_pressed(KeyCode::Space);
+        input.begin_frame();
+        // Already held — pressing again on the same key should NOT mark just_pressed
+        input.on_key_pressed(KeyCode::Space);
+        assert!(!input.is_key_just_pressed(KeyCode::Space));
+    }
+
+    #[test]
+    fn mouse_position_tracks_movement() {
+        let mut input = InputState::new();
+        input.on_mouse_moved(123.0, 456.0);
+        assert_eq!(input.mouse_position(), (123.0, 456.0));
+    }
+
+    #[test]
+    fn mouse_button_state_machine() {
+        let mut input = InputState::new();
+        input.on_mouse_button_pressed(MouseButton::Left);
+        assert!(input.is_mouse_button_pressed(MouseButton::Left));
+        assert!(input.is_mouse_button_just_pressed(MouseButton::Left));
+        input.begin_frame();
+        assert!(input.is_mouse_button_pressed(MouseButton::Left));
+        assert!(!input.is_mouse_button_just_pressed(MouseButton::Left));
+        input.on_mouse_button_released(MouseButton::Left);
+        assert!(!input.is_mouse_button_pressed(MouseButton::Left));
+    }
+
+    #[test]
+    fn action_mapping_keyboard() {
+        let mut input = InputState::new();
+        let mut actions = HashMap::new();
+        actions.insert("jump".to_string(), make_action_config(&["Space"], &[]));
+        input.load_actions(&actions);
+
+        assert!(!input.is_action_just_pressed("jump"));
+        input.on_key_pressed(KeyCode::Space);
+        assert!(input.is_action_just_pressed("jump"));
+        assert!(input.is_action_pressed("jump"));
+    }
+
+    #[test]
+    fn action_mapping_mouse() {
+        let mut input = InputState::new();
+        let mut actions = HashMap::new();
+        actions.insert("attack".to_string(), make_action_config(&[], &["Left"]));
+        input.load_actions(&actions);
+
+        input.on_mouse_button_pressed(MouseButton::Left);
+        assert!(input.is_action_just_pressed("attack"));
+    }
+
+    #[test]
+    fn action_mapping_mixed_keyboard_and_mouse() {
+        let mut input = InputState::new();
+        let mut actions = HashMap::new();
+        actions.insert(
+            "fire".to_string(),
+            make_action_config(&["Space", "Enter"], &["Left", "Right"]),
+        );
+        input.load_actions(&actions);
+
+        input.on_mouse_button_pressed(MouseButton::Right);
+        assert!(input.is_action_just_pressed("fire"));
+        input.begin_frame();
+
+        input.on_key_pressed(KeyCode::Enter);
+        assert!(input.is_action_just_pressed("fire"));
+    }
+
+    #[test]
+    fn action_with_invalid_keys_filters_them_out() {
+        let mut input = InputState::new();
+        let mut actions = HashMap::new();
+        actions.insert(
+            "jump".to_string(),
+            make_action_config(&["BogusKey", "Space"], &[]),
+        );
+        input.load_actions(&actions);
+
+        input.on_key_pressed(KeyCode::Space);
+        assert!(input.is_action_just_pressed("jump"));
+    }
+
+    #[test]
+    fn unknown_action_returns_false() {
+        let input = InputState::new();
+        assert!(!input.is_action_just_pressed("nonexistent"));
+        assert!(!input.is_action_pressed("nonexistent"));
+    }
+
+    #[test]
+    fn chars_received_buffered_and_cleared_each_frame() {
+        let mut input = InputState::new();
+        input.on_char_received('a');
+        input.on_char_received('b');
+        assert_eq!(input.chars_this_frame(), &['a', 'b']);
+        input.begin_frame();
+        assert!(input.chars_this_frame().is_empty());
+    }
+
+    #[test]
+    fn scroll_delta_accumulates_within_frame() {
+        let mut input = InputState::new();
+        input.on_mouse_scroll(0.0, 1.0);
+        input.on_mouse_scroll(2.0, 3.0);
+        assert_eq!(input.mouse_scroll_delta(), 4.0);
+        assert_eq!(input.mouse_scroll_delta_x(), 2.0);
+        input.begin_frame();
+        assert_eq!(input.mouse_scroll_delta(), 0.0);
+        assert_eq!(input.mouse_scroll_delta_x(), 0.0);
     }
 }

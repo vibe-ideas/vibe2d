@@ -79,11 +79,7 @@ impl Game for UiDemo {
             ui.label_colored(font, "Labels", UiColor::from_hex(0x55BBFF));
             ui.label(font, "Plain label");
             ui.label_colored(font, "Colored label", UiColor::from_hex(0xFF8855));
-            ui.label_colored(
-                font,
-                "Semi-transparent",
-                UiColor::WHITE.with_alpha(0.4),
-            );
+            ui.label_colored(font, "Semi-transparent", UiColor::WHITE.with_alpha(0.4));
         }
 
         // ── Row 1, Col 2: Progress Bar ──────────────────────────
@@ -140,10 +136,7 @@ impl Game for UiDemo {
                 text_color: UiColor::WHITE,
                 padding: 6.0,
             };
-            if ui
-                .button_styled(font, "Reset", green_style)
-                .clicked()
-            {
+            if ui.button_styled(font, "Reset", green_style).clicked() {
                 self.click_count = 0;
                 self.messages.push("Counter reset!".into());
             }

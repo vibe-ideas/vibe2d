@@ -178,8 +178,8 @@ impl Game for FlappyBirdGame {
         match self.state {
             GameState::Idle => {
                 // Bird gentle hover (sine wave)
-                self.bird_y = self.vh / 2.0 - self.bird_h / 2.0
-                    + (self.ground_scroll * 0.05).sin() * 5.0;
+                self.bird_y =
+                    self.vh / 2.0 - self.bird_h / 2.0 + (self.ground_scroll * 0.05).sin() * 5.0;
 
                 if input.is_action_just_pressed("flap") {
                     self.reset_game();
@@ -192,8 +192,8 @@ impl Game for FlappyBirdGame {
             GameState::Countdown => {
                 self.countdown_timer -= dt;
                 // Bird gentle hover during countdown
-                self.bird_y = self.vh / 2.0 - self.bird_h / 2.0
-                    + (self.ground_scroll * 0.05).sin() * 5.0;
+                self.bird_y =
+                    self.vh / 2.0 - self.bird_h / 2.0 + (self.ground_scroll * 0.05).sin() * 5.0;
 
                 if self.countdown_timer <= 0.0 {
                     self.bird_vy = JUMP_VELOCITY;
@@ -302,11 +302,11 @@ impl Game for FlappyBirdGame {
                 }
             }
         }
-
     }
 
     fn update_ui(&mut self, ctx: &mut Context, input: &InputState) {
-        let white_tex = ctx.assets
+        let white_tex = ctx
+            .assets
             .texture_id("__vibe_ui_white")
             .unwrap_or(TextureId(0));
         let vw = self.vw;
@@ -318,13 +318,7 @@ impl Game for FlappyBirdGame {
         // Take ui_state out so we can borrow ctx.assets independently
         let mut ui_state = std::mem::take(&mut ctx.ui_state);
 
-        let mut ui = UiContext::new(
-            &mut ui_state,
-            input,
-            white_tex,
-            vw,
-            vh,
-        );
+        let mut ui = UiContext::new(&mut ui_state, input, white_tex, vw, vh);
         ui.set_anchor(Anchor::TopCenter);
 
         match self.state {
@@ -414,7 +408,6 @@ impl Game for FlappyBirdGame {
             self.bird_w,
             self.bird_h,
         );
-
     }
 
     fn clear_color(&self) -> Color {
@@ -459,10 +452,16 @@ impl Game for FlappyBirdGame {
     }
 
     #[cfg(feature = "vdp")]
-    fn handle_vdp(&mut self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value, String> {
+    fn handle_vdp(
+        &mut self,
+        method: &str,
+        params: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
         match method {
             "game.setBirdY" => {
-                let y = params.get("y").and_then(|v| v.as_f64())
+                let y = params
+                    .get("y")
+                    .and_then(|v| v.as_f64())
                     .ok_or("Missing 'y' parameter")?;
                 self.bird_y = y as f32;
                 if let Some(vy) = params.get("vy").and_then(|v| v.as_f64()) {
@@ -471,13 +470,17 @@ impl Game for FlappyBirdGame {
                 Ok(serde_json::json!({"bird_y": self.bird_y, "bird_vy": self.bird_vy}))
             }
             "game.setScore" => {
-                let score = params.get("score").and_then(|v| v.as_u64())
+                let score = params
+                    .get("score")
+                    .and_then(|v| v.as_u64())
                     .ok_or("Missing 'score' parameter")?;
                 self.score = score as u32;
                 Ok(serde_json::json!({"score": self.score}))
             }
             "game.setState" => {
-                let state = params.get("state").and_then(|v| v.as_str())
+                let state = params
+                    .get("state")
+                    .and_then(|v| v.as_str())
                     .ok_or("Missing 'state' parameter")?;
                 match state {
                     "idle" => {

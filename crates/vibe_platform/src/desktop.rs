@@ -29,10 +29,14 @@ pub trait PlatformCallbacks {
     fn on_render(&mut self, renderer: &mut Renderer);
     fn clear_color(&self) -> [f32; 4];
     fn get_textures(&self) -> Vec<&vibe_render::Texture>;
-    fn should_render(&self) -> bool { true }
+    fn should_render(&self) -> bool {
+        true
+    }
     /// Returns `true` when real keyboard/mouse input should be suppressed
     /// (e.g. a VDP client is connected and providing simulated input).
-    fn should_suppress_input(&self) -> bool { false }
+    fn should_suppress_input(&self) -> bool {
+        false
+    }
 }
 
 struct App<C: PlatformCallbacks> {
@@ -58,7 +62,11 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                 self.config.window_height,
             ));
 
-        let window = Arc::new(event_loop.create_window(win_attrs).expect("Failed to create window"));
+        let window = Arc::new(
+            event_loop
+                .create_window(win_attrs)
+                .expect("Failed to create window"),
+        );
 
         // Create wgpu instance + surface + device
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -154,26 +162,28 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                         }
                     }
                     // Forward printable characters for UI text input
-                    if event.state.is_pressed() {
-                        if let Some(ref text) = event.text {
-                            for ch in text.chars() {
-                                if !ch.is_control() {
-                                    self.input.on_char_received(ch);
-                                }
+                    if event.state.is_pressed()
+                        && let Some(ref text) = event.text
+                    {
+                        for ch in text.chars() {
+                            if !ch.is_control() {
+                                self.input.on_char_received(ch);
                             }
                         }
                     }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if !self.callbacks.should_suppress_input() {
-                    if let Some(window) = &self.window {
-                        let size = window.inner_size();
-                        if size.width > 0 && size.height > 0 {
-                            let vx = (position.x as f32 / size.width as f32) * self.config.virtual_width;
-                            let vy = (position.y as f32 / size.height as f32) * self.config.virtual_height;
-                            self.input.on_mouse_moved(vx, vy);
-                        }
+                if !self.callbacks.should_suppress_input()
+                    && let Some(window) = &self.window
+                {
+                    let size = window.inner_size();
+                    if size.width > 0 && size.height > 0 {
+                        let vx =
+                            (position.x as f32 / size.width as f32) * self.config.virtual_width;
+                        let vy = (position.y as f32 / size.height as f32)
+                            * self.config.virtual_height;
+                        self.input.on_mouse_moved(vx, vy);
                     }
                 }
             }
@@ -198,7 +208,9 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                 if !self.callbacks.should_suppress_input() {
                     let (scroll_x, scroll_y) = match delta {
                         winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x as f32, pos.y as f32)
+                        }
                     };
                     self.input.on_mouse_scroll(scroll_x, scroll_y);
                 }
@@ -216,14 +228,14 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                 self.callbacks.on_update(dt, &mut self.input);
 
                 // Render (skip when VDP fast-forward is active)
-                if self.callbacks.should_render() {
-                    if let Some(renderer) = &mut self.renderer {
-                        self.callbacks.on_render(renderer);
-                        let clear_color = self.callbacks.clear_color();
-                        let textures = self.callbacks.get_textures();
-                        if let Err(e) = renderer.render(clear_color, &textures) {
-                            tracing::error!("Render error: {}", e);
-                        }
+                if self.callbacks.should_render()
+                    && let Some(renderer) = &mut self.renderer
+                {
+                    self.callbacks.on_render(renderer);
+                    let clear_color = self.callbacks.clear_color();
+                    let textures = self.callbacks.get_textures();
+                    if let Err(e) = renderer.render(clear_color, &textures) {
+                        tracing::error!("Render error: {}", e);
                     }
                 }
 

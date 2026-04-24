@@ -10,6 +10,7 @@ members = [
     "crates/vibe_debug",
     "crates/vibe_platform",
     "crates/vibe_ui",
+    "crates/vibe_test",
     "tools/vibe-cli",
     "examples/flappy-bird",
     "examples/tetris",
@@ -33,6 +34,7 @@ vibe_asset = { path = "crates/vibe_asset" }
 vibe_debug = { path = "crates/vibe_debug" }
 vibe_platform = { path = "crates/vibe_platform" }
 vibe_ui = { path = "crates/vibe_ui" }
+vibe_test = { path = "crates/vibe_test" }
 
 # External dependencies
 wgpu = "24"

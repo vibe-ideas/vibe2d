@@ -44,6 +44,7 @@ vibe2d/
 │   │       ├── response.rs     # WidgetResponse（clicked、submitted 等）
 │   │       ├── id.rs           # WidgetId
 │   │       └── vdp.rs          # VdpUiAction、WidgetSnapshot
+│   ├── vibe_test/              # 测试工具库：VdpClient + GameHarness（游戏集成测试用，dev-dep）
 │   └── vibe_physics/           # 占位 crate —— 尚未实现
 ├── tools/
 │   └── vibe-cli/               # CLI 工具：vibe new/inspect/rpc/screenshot
@@ -64,14 +65,17 @@ vibe2d/
 
 ```
 游戏 crate（如 flappy-bird）
-  └── vibe2d
-        ├── vibe_render      （wgpu 渲染）
-        ├── vibe_platform    （winit 窗口/事件循环）
-        ├── vibe_input       （键盘/鼠标状态）
-        ├── vibe_asset       （纹理/字体加载）
-        ├── vibe_audio       （rodio 音效播放）
-        ├── vibe_ui          （即时模式 UI）
-        └── vibe_debug       （可选，通过 "vdp" feature 启用）
+  ├── [dependencies]
+  │     └── vibe2d
+  │           ├── vibe_render      （wgpu 渲染）
+  │           ├── vibe_platform    （winit 窗口/事件循环）
+  │           ├── vibe_input       （键盘/鼠标状态）
+  │           ├── vibe_asset       （纹理/字体加载）
+  │           ├── vibe_audio       （rodio 音效播放）
+  │           ├── vibe_ui          （即时模式 UI）
+  │           └── vibe_debug       （可选，通过 "vdp" feature 启用）
+  └── [dev-dependencies]
+        └── vibe_test              （可选，VDP 集成测试工具库；仅在 `cargo test` 时拉取）
 ```
 
 ## 核心 API
@@ -157,6 +161,14 @@ cargo build --no-default-features  # 剥离 VDP，用于发布
 
 Feature 级联：游戏 crate → `vibe2d/vdp` → `vibe_debug` + `serde_json`
 
+**命名统一**：整个 workspace 中凡是与 VDP 相关的 feature 一律叫 `vdp`（不要自造 `debug`、`harness`、`client` 等别名）：
+
+| Crate | `vdp` feature 含义 |
+|-------|------------------|
+| `vibe2d` | 启用运行时 VDP WebSocket 服务端 |
+| `vibe_test` | 启用 VDP 客户端 + 进程 harness（测试工具库） |
+| 游戏 crate | 级联开启 `vibe2d/vdp` + `serde_json` |
+
 ## 线程模型
 
 ```
@@ -227,6 +239,35 @@ Feature 级联：游戏 crate → `vibe2d/vdp` → `vibe_debug` + `serde_json`
 2. 在 `crates/vibe2d/src/config.rs`（`AssetsConfig`）中添加配置字段
 3. 在 `crates/vibe2d/src/lib.rs` 的 `GameBridge::on_init()` 中添加加载调用
 
+### 为游戏编写测试
+
+Vibe2D 分两层：
+
+- **引擎层**：每个 crate 在 `#[cfg(test)] mod tests` 中写纯逻辑单元测试（无 GPU/窗口依赖），覆盖 `InputState`、`UiState`、`VdpResponse` 序列化、`GameConfig` 解析等。引擎本身**不写**针对具体游戏的集成测试——这是 example 自己的职责。
+- **游戏层**：example 通过 `vibe_test` 工具库写 VDP 端到端集成测试，验证自己的业务功能（按钮点击、游戏状态转移、计分逻辑等）。
+
+新游戏接入 Rust 集成测试的步骤：
+
+1. 在游戏 `Cargo.toml` 中加入 dev-dependencies：
+   ```toml
+   [dev-dependencies]
+   vibe_test = { workspace = true, features = ["vdp"] }
+   tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+   anyhow.workspace = true
+   serde_json.workspace = true
+   ```
+2. 确保 `game.yaml` 中 `debug.vdp.enabled: true`，并使用**独立端口**避免与其他 example 冲突（如 flappy-bird=9229、ui-demo=9230、tetris=9231……）。
+3. 在 `examples/<game>/tests/<name>.rs` 中写 `#[tokio::test(flavor = "multi_thread")] #[ignore]` 测试，用 `vibe_test::GameHarness::launch("<game>", <port>)` 启动进程并拿到一个带 VDP 客户端的 harness。
+4. 运行：`cargo test -p <game> -- --ignored --test-threads=1`（必须串行，因为 harness 占用固定 VDP 端口）。
+
+参考样例见 `examples/ui/tests/vdp_ui.rs`。
+
+**注意事项**：
+- `vibe_test` 是 **dev-dependency** —— `cargo build --release` **不会**把它编译进发布产物。
+- `#[ignore]` 是刻意的——集成测试会冷启动 `cargo run -p <game>`，耗时长，不适合放在默认 `cargo test` 管线里。
+- `GameHarness::step_and_wait(n)` 要优先于裸 `step(n)` —— `engine.step` 是非阻塞的，不等就发下一条 RPC 容易产生时序 race。
+- Python 脚本（`examples/*/tests/*.py`）定位不同：Rust 测试是 **CI 门禁**（硬断言 + 退出码），Python 是 **交互探索 / LLM autopilot 演示**。两者互补，不要互相替代。
+
 ## 代码风格
 
 ### Rust 约定
@@ -245,6 +286,37 @@ Feature 级联：游戏 crate → `vibe2d/vdp` → `vibe_debug` + `serde_json`
 - **所有坐标使用虚拟分辨率** — 而非物理窗口像素
 - **VDP 代码始终使用 `#[cfg(feature = "vdp")]` 门控** — 剥离后零开销
 - **UI 通过 sprite batch 渲染** — 无单独的渲染管线；矩形使用 1×1 白色像素纹理 + 颜色着色
+
+### 测试与验证（硬性要求）
+
+**在交付任何代码修改前，必须跑通受影响范围的测试。** 这是非协商项，不是「有余力就做」。
+
+最小自证路径（按作用范围选一组执行）：
+
+| 改动范围 | 必须跑通的命令 |
+|---------|---------------|
+| 修改某个引擎 crate（如 `vibe_ui`、`vibe_input`） | `cargo test -p <crate>` |
+| 修改 `vibe2d` 核心 / `GameBridge` / VDP 路由 | `cargo test -p vibe2d` + `cargo test -p ui-demo -- --ignored --test-threads=1` |
+| 修改 `vibe_test` 工具库 | `cargo test -p vibe_test` + 至少一个使用它的 example 的集成测试 |
+| 修改某个 example（如 `ui-demo`） | `cargo test -p <example> -- --ignored --test-threads=1` |
+| 涉及 feature 门控或 workspace 结构变动 | 额外跑 `cargo build --no-default-features` 确认剥离路径能编译 |
+| 无法判断影响范围 | 兜底：`cargo test --workspace` + `cargo test -p ui-demo -- --ignored --test-threads=1` |
+
+规则细则：
+
+- **测试失败 = 任务未完成**。不允许「代码写完了，测试没跑」或「编译通过就算完」。
+- **不准通过删减/注释/放宽断言来让测试变绿**。如果断言确实算错了（例如 `examples/ui/tests/vdp_ui.rs` 里曾经漏算 `padding*2`），修正断言时必须在注释中说明「为什么旧断言错了」，而不是偷偷改数字。
+- **不要引入新的 `#[ignore]` 来规避失败**。`#[ignore]` 只用于"需要真实窗口/GPU 的 VDP 集成测试"这一类本来就不适合默认跑的场景。
+- **不要提交只跑了 `cargo check` / `cargo build` 就声称「完成」的改动**——这两个命令只验证类型，不验证行为。
+- **本地无法跑窗口/GPU 测试时**（比如纯 headless CI），至少跑所有单元测试 + `cargo test -p ui-demo --no-run` 保证集成测试编译通过，并在回复中显式说明「哪些测试因环境限制未跑」。
+- **修复 bug 前应当有一条复现该 bug 的测试**；修复后这条测试从 red 变 green。如果原有测试覆盖不到这个 bug，补一条再修。
+
+**反模式**（一旦出现立即回退）：
+
+- 「编译通过了所以应该没问题」
+- 「这个测试本来就是 flaky 的，忽略」
+- 「改动很小，不用跑测试」
+- 「用户没要求跑测试」 — 这条规则就是用户的要求
 
 ### 命名规范
 
@@ -321,3 +393,4 @@ VDP 是基于 WebSocket + JSON-RPC 2.0 的运行时调试协议（`ws://127.0.0.
 - **`__vibe_ui_white`** — 引擎自动创建的 1×1 白色像素纹理，用于 UI 矩形绘制。游戏纹理不要使用此名称。
 - **VDP `handle_vdp()` 兜底分支** — 始终以 `_ => Err(format!("Unknown method: {}", method))` 结尾，避免静默吞掉未知方法。
 - **Feature 门控** — 任何涉及 `serde_json`、`vibe_debug`、`inspect()` 或 `handle_vdp()` 的代码都必须使用 `#[cfg(feature = "vdp")]`。
+- **交付前必须跑测试** — 详见上面的《测试与验证》小节。改完代码不跑测试就交付属于未完成任务。

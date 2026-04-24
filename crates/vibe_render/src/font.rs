@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::texture::Texture;
 use crate::TextureId;
+use crate::texture::Texture;
 
 /// A loaded font with pre-rasterized glyph atlas.
 pub struct Font {
@@ -95,8 +95,9 @@ impl Font {
             for gy in 0..gh {
                 for gx in 0..gw {
                     let alpha = bitmap[gy * gw + gx];
-                    let atlas_idx = ((py + gy as u32) * atlas_width + (px + gx as u32)) as usize * 4;
-                    atlas_data[atlas_idx] = 255;     // R
+                    let atlas_idx =
+                        ((py + gy as u32) * atlas_width + (px + gx as u32)) as usize * 4;
+                    atlas_data[atlas_idx] = 255; // R
                     atlas_data[atlas_idx + 1] = 255; // G
                     atlas_data[atlas_idx + 2] = 255; // B
                     atlas_data[atlas_idx + 3] = alpha; // A
