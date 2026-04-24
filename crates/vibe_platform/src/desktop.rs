@@ -152,23 +152,23 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                     renderer.resize(new_size.width, new_size.height);
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if !self.callbacks.should_suppress_input() {
-                    if let PhysicalKey::Code(keycode) = event.physical_key {
-                        if event.state.is_pressed() {
-                            self.input.on_key_pressed(keycode);
-                        } else {
-                            self.input.on_key_released(keycode);
-                        }
+            // `if` guard lets us skip the whole arm when VDP is driving input,
+            // which is cleaner than an inner `if` per clippy::collapsible_match.
+            WindowEvent::KeyboardInput { event, .. } if !self.callbacks.should_suppress_input() => {
+                if let PhysicalKey::Code(keycode) = event.physical_key {
+                    if event.state.is_pressed() {
+                        self.input.on_key_pressed(keycode);
+                    } else {
+                        self.input.on_key_released(keycode);
                     }
-                    // Forward printable characters for UI text input
-                    if event.state.is_pressed()
-                        && let Some(ref text) = event.text
-                    {
-                        for ch in text.chars() {
-                            if !ch.is_control() {
-                                self.input.on_char_received(ch);
-                            }
+                }
+                // Forward printable characters for UI text input
+                if event.state.is_pressed()
+                    && let Some(ref text) = event.text
+                {
+                    for ch in text.chars() {
+                        if !ch.is_control() {
+                            self.input.on_char_received(ch);
                         }
                     }
                 }
@@ -187,33 +187,29 @@ impl<C: PlatformCallbacks> ApplicationHandler for App<C> {
                     }
                 }
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                if !self.callbacks.should_suppress_input() {
-                    let mb = match button {
-                        winit::event::MouseButton::Left => Some(vibe_input::MouseButton::Left),
-                        winit::event::MouseButton::Right => Some(vibe_input::MouseButton::Right),
-                        winit::event::MouseButton::Middle => Some(vibe_input::MouseButton::Middle),
-                        _ => None,
-                    };
-                    if let Some(mb) = mb {
-                        if state.is_pressed() {
-                            self.input.on_mouse_button_pressed(mb);
-                        } else {
-                            self.input.on_mouse_button_released(mb);
-                        }
+            WindowEvent::MouseInput { state, button, .. }
+                if !self.callbacks.should_suppress_input() =>
+            {
+                let mb = match button {
+                    winit::event::MouseButton::Left => Some(vibe_input::MouseButton::Left),
+                    winit::event::MouseButton::Right => Some(vibe_input::MouseButton::Right),
+                    winit::event::MouseButton::Middle => Some(vibe_input::MouseButton::Middle),
+                    _ => None,
+                };
+                if let Some(mb) = mb {
+                    if state.is_pressed() {
+                        self.input.on_mouse_button_pressed(mb);
+                    } else {
+                        self.input.on_mouse_button_released(mb);
                     }
                 }
             }
-            WindowEvent::MouseWheel { delta, .. } => {
-                if !self.callbacks.should_suppress_input() {
-                    let (scroll_x, scroll_y) = match delta {
-                        winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
-                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                            (pos.x as f32, pos.y as f32)
-                        }
-                    };
-                    self.input.on_mouse_scroll(scroll_x, scroll_y);
-                }
+            WindowEvent::MouseWheel { delta, .. } if !self.callbacks.should_suppress_input() => {
+                let (scroll_x, scroll_y) = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(x, y) => (x * 20.0, y * 20.0),
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+                };
+                self.input.on_mouse_scroll(scroll_x, scroll_y);
             }
             WindowEvent::RedrawRequested => {
                 let now = Instant::now();
