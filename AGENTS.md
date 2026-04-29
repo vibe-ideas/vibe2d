@@ -45,18 +45,29 @@ vibe2d/
 │   │       ├── id.rs           # WidgetId
 │   │       └── vdp.rs          # VdpUiAction、WidgetSnapshot
 │   ├── vibe_test/              # 测试工具库：VdpClient + GameHarness（游戏集成测试用，dev-dep）
-│   └── vibe_physics/           # 占位 crate —— 尚未实现
+│   ├── vibe_aoi/               # 空间查询库（AOI / broadphase）—— 独立工具库，不进 Context
+│   │   └── src/
+│   │       ├── lib.rs          # 入口：Shape、AoiWorld、EntityId、ObserverId、AoiEvent、RaycastHit
+│   │       ├── shape.rs        # Shape 枚举（Point/Circle/Aabb）+ intersects/contains_point
+│   │       ├── world.rs        # AoiWorld 高层 API + handle_vdp（feature-gated）
+│   │       ├── bruteforce.rs   # 线性扫描后端（小规模 / 测试 oracle）
+│   │       ├── grid.rs         # 均匀网格后端（默认）
+│   │       ├── observer.rs     # Observer + AoiEvent::Enter/Leave
+│   │       └── raycast.rs      # ray_vs_shape（Point/Circle/Aabb）
+│   └── vibe_physics/           # 占位 crate —— 尚未实现，未来将依赖 vibe_aoi 做 broadphase
 ├── tools/
 │   └── vibe-cli/               # CLI 工具：vibe new/inspect/rpc/screenshot
 ├── examples/
 │   ├── flappy-bird/            # 完整的 Flappy Bird 游戏（约 480 行）
 │   ├── tetris/                 # 俄罗斯方块
 │   ├── mari0/                  # 马里奥风格游戏
-│   └── ui/                     # UI 系统演示
+│   ├── ui/                     # UI 系统演示
+│   └── aoi-demo/               # AOI 演示：移动圆 + 散点 + Observer enter/leave
 ├── docs/
 │   ├── architecture.md         # 详细架构文档
 │   ├── vdp.md                  # VDP 协议规范
-│   └── ui.md                   # UI 系统设计文档
+│   ├── ui.md                   # UI 系统设计文档
+│   └── aoi.md                  # AOI 模块设计文档
 └── skills/
     └── vdp.md                  # LLM skill 文件，用于 VDP 交互
 ```
@@ -66,17 +77,20 @@ vibe2d/
 ```
 游戏 crate（如 flappy-bird）
   ├── [dependencies]
-  │     └── vibe2d
-  │           ├── vibe_render      （wgpu 渲染）
-  │           ├── vibe_platform    （winit 窗口/事件循环）
-  │           ├── vibe_input       （键盘/鼠标状态）
-  │           ├── vibe_asset       （纹理/字体加载）
-  │           ├── vibe_audio       （rodio 音效播放）
-  │           ├── vibe_ui          （即时模式 UI）
-  │           └── vibe_debug       （可选，通过 "vdp" feature 启用）
+  │     ├── vibe2d
+  │     │     ├── vibe_render      （wgpu 渲染）
+  │     │     ├── vibe_platform    （winit 窗口/事件循环）
+  │     │     ├── vibe_input       （键盘/鼠标状态）
+  │     │     ├── vibe_asset       （纹理/字体加载）
+  │     │     ├── vibe_audio       （rodio 音效播放）
+  │     │     ├── vibe_ui          （即时模式 UI）
+  │     │     └── vibe_debug       （可选，通过 "vdp" feature 启用）
+  │     └── vibe_aoi               （可选；空间查询库，按需引入）
   └── [dev-dependencies]
         └── vibe_test              （可选，VDP 集成测试工具库；仅在 `cargo test` 时拉取）
 ```
+
+**注意**：`vibe_aoi` 故意**不**作为 `vibe2d` 的子依赖、**不**进 `Context`。它是**可选的独立工具库**，只有用得到空间查询（broadphase、AOI、raycast、enter/leave 事件）的游戏才在自己的 `Cargo.toml` 里直接 `vibe_aoi.workspace = true`。理由见 `docs/aoi.md`。游戏自己持有 `AoiWorld` 实例并通过 `handle_vdp()` 转发 `aoi.*` 方法（详见下方「添加新 VDP 方法」一节和 `examples/aoi-demo`）。
 
 ## 核心 API
 
@@ -403,6 +417,7 @@ VDP 是基于 WebSocket + JSON-RPC 2.0 的运行时调试协议（`ws://127.0.0.
 | `game.yaml` 配置字段 | `docs/api.md`（game.yaml 章节） |
 | VDP 新增/修改/删除方法 | `docs/api.md`（VDP 章节）+ `docs/vdp.md` + `skills/vdp.md` |
 | UI 组件新增/修改 | `docs/api.md`（UI 系统章节）+ `docs/ui.md` |
+| AOI（`vibe_aoi`）API 或后端变更 | `docs/api.md`（AOI 章节）+ `docs/aoi.md`（设计文档） |
 | 新增 crate 或改变 crate 依赖关系 | `AGENTS.md`（仓库结构 / Crate 依赖关系） |
 | 新增设计模式或架构变更 | `AGENTS.md`（关键设计模式）+ `docs/architecture.md` |
 | 新增示例游戏 | `AGENTS.md`（仓库结构） |
@@ -417,7 +432,18 @@ VDP 是基于 WebSocket + JSON-RPC 2.0 的运行时调试协议（`ws://127.0.0.
 - **IME / 中文输入** — TextInput 默认开启 IME（macOS/Win/Linux）。游戏代码不需要做任何额外工作就能接收 IME commit；只需要保证当前焦点 TextInput 用的字体覆盖了用户语言（如中文用户用思源黑体），并在 update 阶段把 buffer 内容 + `input.ime_preedit().map(|p| p.text)` 一起 prepare。
 - **`vibe_asset` 不依赖 wgpu** — asset 层只管"名称→ID 索引"和"已上传句柄的容器"。所有 GPU 操作（解码、上传、字形栅格化）都通过 `Renderer::load_texture` / `load_font` / `prepare_text` 这三个高层方法完成。新增资源类型时不要在 `vibe_asset` 里 `use wgpu`。
 - **纹理名称必须匹配** — `ctx.assets.texture_id("player")` 查找的是 `game.yaml` 中 `assets.textures` 部分声明的名称。
-- **`__vibe_ui_white`** — 引擎自动创建的 1×1 白色像素纹理，用于 UI 矩形绘制。游戏纹理不要使用此名称。
+- **内置纹理（`__vibe_*` 前缀保留）** — 引擎在 `on_init` 自动创建并注册三张运行时纹理：
+  - `vibe_render::builtin::WHITE`（即 `"__vibe_ui_white"`）：1×1 白色像素，UI 矩形和任何"纯色色块"绘制都靠它 + 颜色着色
+  - `vibe_render::builtin::CIRCLE_FILLED`（即 `"__vibe_circle_filled"`）：256² 抗锯齿实心圆，由 `Screen::draw_circle` 使用
+  - `vibe_render::builtin::CIRCLE_RING`（即 `"__vibe_circle_ring"`）：256² 抗锯齿圆环（描边比例 8 %），由 `Screen::draw_circle_outline` 使用
+  
+  **游戏代码获取这些纹理的 ID 时，优先用 `AssetManager` 的便利方法**，而不是按字符串查：
+  ```rust
+  let white = ctx.assets.builtin_white().unwrap_or(TextureId(0));
+  let disc  = ctx.assets.builtin_circle_filled();
+  let ring  = ctx.assets.builtin_circle_ring();
+  ```
+  字符串名仅在写日志、VDP 调试输出之类需要原始字面量的场合才用，且必须从 `vibe_render::builtin::*` 引用 —— **绝对不要硬编码 `"__vibe_ui_white"`**，否则未来重命名会无声地拆掉所有调用方。`__vibe_` 前缀整个保留给引擎，游戏纹理不允许使用此前缀。需要不同描边宽度的圆环时，用 `Renderer::create_ring_texture(label, size, thickness_ratio)` 注册自己的纹理。
 - **VDP `handle_vdp()` 兜底分支** — 始终以 `_ => Err(format!("Unknown method: {}", method))` 结尾，避免静默吞掉未知方法。
 - **Feature 门控** — 任何涉及 `serde_json`、`vibe_debug`、`inspect()` 或 `handle_vdp()` 的代码都必须使用 `#[cfg(feature = "vdp")]`。
 - **交付前必须跑测试** — 详见上面的《测试与验证》小节。改完代码不跑测试就交付属于未完成任务。

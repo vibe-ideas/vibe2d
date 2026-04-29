@@ -131,6 +131,25 @@ screen.draw_text(font, "Hello", x, y);
 screen.draw_text_centered(font, "Hello", y);   // 水平居中
 ```
 
+### 圆形绘制
+
+引擎在启动时会预生成两张高分辨率（256²）抗锯齿圆纹理 —— `vibe_render::builtin::CIRCLE_FILLED`（实心圆）和 `vibe_render::builtin::CIRCLE_RING`（圆环，字符串值分别是 `"__vibe_circle_filled"` / `"__vibe_circle_ring"`，但**不应硬编码**），并通过 `Screen` 暴露成两个高层 API。无需游戏自己生成纹理或拼接矩形：
+
+```rust
+// 实心圆（中心 cx,cy；半径 radius；颜色 color）
+screen.draw_circle(cx, cy, radius, color);
+
+// 圆环 / 空心圆轮廓（描边粗细由内置纹理固定，约为 radius 的 8%）
+screen.draw_circle_outline(cx, cy, radius, color);
+```
+
+要点：
+
+- 两个 API 内部都是单次 sprite blit，会和其他相同纹理的绘制自动合批，开销与画一个 sprite 相同
+- 边缘是 alpha-AA（256² 纹理在 [10, 100] px 半径范围下肉眼无锯齿）
+- `draw_circle_outline` 的描边比例固定。需要明显不同的描边宽度，请用 `Renderer::create_ring_texture(label, size, thickness_ratio)` 自己生成纹理，再用 `draw_sprite_tinted` 绘制
+- 颜色按 alpha 通道与底色混合，可放心叠在场景之上而不遮盖底层内容
+
 ---
 
 ## InputState 输入查询
@@ -231,7 +250,9 @@ debug:                           # 可选，调试配置
 
 ```rust
 fn update_ui(&mut self, ctx: &mut Context, input: &InputState) {
-    let white_tex = ctx.assets.texture_id("__vibe_ui_white").unwrap();
+    // 引擎内置的 1×1 白像素，用于 UI 矩形绘制。优先用便利方法
+    // 而不是按字符串查 —— 见 `vibe_render::builtin::WHITE`。
+    let white_tex = ctx.assets.builtin_white().unwrap();
     let vw = ctx.virtual_width;
     let vh = ctx.virtual_height;
 
@@ -431,4 +452,112 @@ fn handle_vdp(&mut self, method: &str, params: &serde_json::Value)
 - 游戏状态查询：`game.inspect`（内置）
 - 游戏截图：`game.screenshot`（内置）
 - UI 操作：`ui.*`（listWidgets/click/setText/submit/setFocus/scroll 等，内置）
+- AOI 空间查询：`aoi.*`（list/queryAabb/queryCircle/queryPoint/raycast/stats，**由游戏转发**，见下文）
 - 游戏自定义方法：`game.<camelCase>`（如 `game.setBirdY`、`game.setState`）
+
+## AOI 空间查询（`vibe_aoi`）
+
+`vibe_aoi` 是一个**独立的可选工具库**，提供空间查询能力（broadphase、AOI、raycast、enter/leave 事件）。它故意**不进 `Context`、不属于 `vibe2d` 的子依赖**——需要的游戏自己在 `Cargo.toml` 里 `vibe_aoi.workspace = true` 后持有一个 `AoiWorld` 实例。完整设计动机见 `docs/aoi.md`，可运行示例见 `examples/aoi-demo`。
+
+### 启用
+
+```toml
+# 游戏的 Cargo.toml
+[features]
+default = ["vdp"]
+vdp = ["vibe2d/vdp", "vibe_aoi/vdp", "dep:serde_json"]
+
+[dependencies]
+vibe2d = { workspace = true }
+vibe_aoi = { workspace = true }
+serde_json = { workspace = true, optional = true }
+```
+
+`vibe_aoi/vdp` feature 开启时会同时启用 JSON 序列化与 `AoiWorld::handle_vdp` helper；关闭后 `serde_json` 完全不会被拉取，库回到纯 CPU 计算的最小形态。
+
+### 核心类型
+
+| 类型 | 说明 |
+|------|------|
+| `Shape::Point(Vec2)` / `Circle{center, radius}` / `Aabb{center, half_extents}` | 实体或查询区域的几何形状 |
+| `EntityId(u32)` | 实体句柄；`remove` 后会被复用 |
+| `ObserverId(u32)` | 观察者句柄；同上 |
+| `AoiEvent::Enter(EntityId)` / `Leave(EntityId)` | 观察者每帧产出的事件 |
+| `RaycastHit { entity, distance }` | `raycast` 的命中结果 |
+| `AoiStats` | 实体数 / cell 数 / 每 cell 最大与平均实体数 |
+
+### 常用 API
+
+```rust
+use glam::Vec2;
+use vibe_aoi::{AoiWorld, Shape, AoiEvent};
+
+// 选择后端：
+let mut world = AoiWorld::new(Vec2::new(512.0, 288.0));   // 默认 UniformGrid，自动 cell_size
+let mut world = AoiWorld::with_grid(Vec2::splat(1024.0), 32.0); // 显式 cell_size
+let mut world = AoiWorld::with_bruteforce();              // 线性扫描（< ~200 实体或测试 oracle）
+
+// 实体管理：
+let id = world.insert(Shape::circle(Vec2::ZERO, 5.0));
+world.update(id, Shape::circle(Vec2::new(10.0, 0.0), 5.0));
+world.remove(id);
+
+// 一次性查询（注意：返回 `&mut self`，因为 grid 后端用了 dedupe scratchpad）：
+let hits: Vec<EntityId> = world.query_aabb(Vec2::ZERO, Vec2::splat(50.0));
+let hits = world.query_circle(Vec2::new(100.0, 100.0), 30.0);
+let hits = world.query_point(Vec2::new(50.0, 50.0));    // 鼠标拾取
+
+// 观察者（跨帧持久查询，自动产 enter/leave 事件）：
+let obs = world.create_observer(Shape::circle(player_pos, 100.0));
+// 每帧：
+world.update_observer(obs, Shape::circle(new_player_pos, 100.0));
+for ev in world.drain_events(obs) {
+    match ev {
+        AoiEvent::Enter(id) => { /* 该实体本帧进入了观察区域 */ }
+        AoiEvent::Leave(id) => { /* 该实体本帧离开了观察区域 */ }
+    }
+}
+world.remove_observer(obs);
+
+// 射线投射（返回最近命中）：
+if let Some(hit) = world.raycast(origin, dir, max_dist) {
+    println!("命中实体 {:?}，距离 {}", hit.entity, hit.distance);
+}
+
+// 诊断：
+let s = world.stats();
+```
+
+**`drain_events` 的语义**：调用后队列被清空。事件**不**跨 `drain_events` 累积；如果你某帧不调它，下一帧的 diff 仍然只反映「上次 drain 时的 current 集 → 当前集」，中间过渡的事件会被合并。
+
+**`AoiWorld::new(bounds)` 的 `cell_size` 启发式**：`bounds.max_element() / 32.0`，clamp 到 `[16.0, 256.0]`。绝大多数 2D 游戏不需要手动调，把世界尺寸传进去即可。
+
+### 与 `vibe_physics` 的边界
+
+`vibe_aoi` 回答「**谁在哪儿**」（broadphase + 区域查询）；`vibe_physics`（尚未实现）将回答「**接下来怎么动**」（narrowphase 接触信息 + 动力学积分）。未来 `vibe_physics` 会**直接复用 `vibe_aoi` 的 grid + 几何判定**，不允许另写一套。详见 `docs/aoi.md`。
+
+### VDP 方法
+
+游戏在自己的 `handle_vdp()` 里转发 `aoi.*` 命名空间到 `AoiWorld::handle_vdp`：
+
+```rust
+#[cfg(feature = "vdp")]
+fn handle_vdp(&mut self, method: &str, params: &serde_json::Value) -> Result<serde_json::Value, String> {
+    if method.starts_with("aoi.") {
+        return self.aoi.handle_vdp(method, params);
+    }
+    // ...其它 game.* 方法
+    Err(format!("Unknown method: {method}"))
+}
+```
+
+| 方法 | 参数 | 返回 |
+|------|------|------|
+| `aoi.list` | — | `{ entities: [{id, shape}, ...] }` |
+| `aoi.queryAabb` | `{ min: [x,y], max: [x,y] }` | `{ hits: [id, ...] }` |
+| `aoi.queryCircle` | `{ center: [x,y], radius: f }` | `{ hits: [id, ...] }` |
+| `aoi.queryPoint` | `{ point: [x,y] }` | `{ hits: [id, ...] }` |
+| `aoi.raycast` | `{ origin: [x,y], dir: [x,y], maxDist: f }` | `{ hit: { entity, distance } | null }` |
+| `aoi.stats` | — | `AoiStats` 全字段 |
+
+`Shape` 在 wire 上序列化为扁平对象：`{"type": "circle", "center": [..], "radius": ..}` / `{"type": "point", "position": [..]}` / `{"type": "aabb", "center": [..], "halfExtents": [..]}`。`EntityId` / `ObserverId` 序列化为裸数字。

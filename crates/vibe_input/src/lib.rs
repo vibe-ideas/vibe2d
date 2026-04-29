@@ -281,27 +281,107 @@ impl InputState {
     }
 }
 
+/// Map a `game.yaml` key name to a winit `KeyCode`.
+///
+/// Names use the short, "ergonomic" form (e.g. `"L"`, `"7"`, `"Space"`) —
+/// **not** winit's internal identifiers like `"KeyL"` or `"Digit7"`. We
+/// surface the short form because game configs are written by humans and
+/// the winit names are an implementation detail.
+///
+/// Coverage:
+/// - All 26 letters: `"A".."Z"` → `KeyCode::KeyA..KeyZ`
+/// - All 10 digits: `"0".."9"` → `KeyCode::Digit0..Digit9`
+/// - Arrows: `"Up" / "Down" / "Left" / "Right"`
+/// - Common controls: `Space`, `Enter`/`Return`, `Escape`, `Tab`, `Backspace`,
+///   `Delete`, `Home`, `End`, `PageUp`, `PageDown`
+/// - Modifiers: `ShiftLeft`, `ShiftRight`, `ControlLeft`, `ControlRight`,
+///   `AltLeft`, `AltRight`
+/// - Function keys: `F1".."F12"`
+///
+/// Unknown names (including lowercase like `"a"` or winit-style `"KeyA"`)
+/// return `None` and are silently dropped at action-load time.
 pub fn string_to_keycode(s: &str) -> Option<KeyCode> {
     match s {
-        "Space" => Some(KeyCode::Space),
-        "Enter" | "Return" => Some(KeyCode::Enter),
-        "Escape" => Some(KeyCode::Escape),
-        "Up" => Some(KeyCode::ArrowUp),
-        "Down" => Some(KeyCode::ArrowDown),
-        "Left" => Some(KeyCode::ArrowLeft),
-        "Right" => Some(KeyCode::ArrowRight),
+        // ── Letters ──
         "A" => Some(KeyCode::KeyA),
         "B" => Some(KeyCode::KeyB),
         "C" => Some(KeyCode::KeyC),
         "D" => Some(KeyCode::KeyD),
         "E" => Some(KeyCode::KeyE),
         "F" => Some(KeyCode::KeyF),
-        "W" => Some(KeyCode::KeyW),
+        "G" => Some(KeyCode::KeyG),
+        "H" => Some(KeyCode::KeyH),
+        "I" => Some(KeyCode::KeyI),
+        "J" => Some(KeyCode::KeyJ),
+        "K" => Some(KeyCode::KeyK),
+        "L" => Some(KeyCode::KeyL),
+        "M" => Some(KeyCode::KeyM),
+        "N" => Some(KeyCode::KeyN),
+        "O" => Some(KeyCode::KeyO),
+        "P" => Some(KeyCode::KeyP),
+        "Q" => Some(KeyCode::KeyQ),
+        "R" => Some(KeyCode::KeyR),
         "S" => Some(KeyCode::KeyS),
+        "T" => Some(KeyCode::KeyT),
+        "U" => Some(KeyCode::KeyU),
+        "V" => Some(KeyCode::KeyV),
+        "W" => Some(KeyCode::KeyW),
         "X" => Some(KeyCode::KeyX),
+        "Y" => Some(KeyCode::KeyY),
         "Z" => Some(KeyCode::KeyZ),
+
+        // ── Digits (top row, not numpad) ──
+        "0" => Some(KeyCode::Digit0),
+        "1" => Some(KeyCode::Digit1),
+        "2" => Some(KeyCode::Digit2),
+        "3" => Some(KeyCode::Digit3),
+        "4" => Some(KeyCode::Digit4),
+        "5" => Some(KeyCode::Digit5),
+        "6" => Some(KeyCode::Digit6),
+        "7" => Some(KeyCode::Digit7),
+        "8" => Some(KeyCode::Digit8),
+        "9" => Some(KeyCode::Digit9),
+
+        // ── Arrows ──
+        "Up" => Some(KeyCode::ArrowUp),
+        "Down" => Some(KeyCode::ArrowDown),
+        "Left" => Some(KeyCode::ArrowLeft),
+        "Right" => Some(KeyCode::ArrowRight),
+
+        // ── Common controls ──
+        "Space" => Some(KeyCode::Space),
+        "Enter" | "Return" => Some(KeyCode::Enter),
+        "Escape" => Some(KeyCode::Escape),
+        "Tab" => Some(KeyCode::Tab),
+        "Backspace" => Some(KeyCode::Backspace),
+        "Delete" => Some(KeyCode::Delete),
+        "Home" => Some(KeyCode::Home),
+        "End" => Some(KeyCode::End),
+        "PageUp" => Some(KeyCode::PageUp),
+        "PageDown" => Some(KeyCode::PageDown),
+
+        // ── Modifiers ──
         "ShiftLeft" => Some(KeyCode::ShiftLeft),
         "ShiftRight" => Some(KeyCode::ShiftRight),
+        "ControlLeft" => Some(KeyCode::ControlLeft),
+        "ControlRight" => Some(KeyCode::ControlRight),
+        "AltLeft" => Some(KeyCode::AltLeft),
+        "AltRight" => Some(KeyCode::AltRight),
+
+        // ── Function keys ──
+        "F1" => Some(KeyCode::F1),
+        "F2" => Some(KeyCode::F2),
+        "F3" => Some(KeyCode::F3),
+        "F4" => Some(KeyCode::F4),
+        "F5" => Some(KeyCode::F5),
+        "F6" => Some(KeyCode::F6),
+        "F7" => Some(KeyCode::F7),
+        "F8" => Some(KeyCode::F8),
+        "F9" => Some(KeyCode::F9),
+        "F10" => Some(KeyCode::F10),
+        "F11" => Some(KeyCode::F11),
+        "F12" => Some(KeyCode::F12),
+
         _ => None,
     }
 }
@@ -351,10 +431,34 @@ mod tests {
     }
 
     #[test]
+    fn string_to_keycode_all_letters() {
+        // The L key was historically missing from the whitelist, which silently
+        // broke `aoi-demo`'s `[L] toggle_lod` action. Make sure the full alphabet
+        // is wired up so similar regressions are caught at unit-test time.
+        assert_eq!(string_to_keycode("L"), Some(KeyCode::KeyL));
+        assert_eq!(string_to_keycode("M"), Some(KeyCode::KeyM));
+        assert_eq!(string_to_keycode("Q"), Some(KeyCode::KeyQ));
+        assert_eq!(string_to_keycode("Y"), Some(KeyCode::KeyY));
+    }
+
+    #[test]
+    fn string_to_keycode_digits_and_function_keys() {
+        assert_eq!(string_to_keycode("0"), Some(KeyCode::Digit0));
+        assert_eq!(string_to_keycode("7"), Some(KeyCode::Digit7));
+        assert_eq!(string_to_keycode("F1"), Some(KeyCode::F1));
+        assert_eq!(string_to_keycode("F12"), Some(KeyCode::F12));
+    }
+
+    #[test]
     fn string_to_keycode_unknown_returns_none() {
-        assert_eq!(string_to_keycode("F1"), None);
         assert_eq!(string_to_keycode(""), None);
         assert_eq!(string_to_keycode("space"), None); // case-sensitive
+        // We deliberately don't accept winit's internal "KeyX" form — game.yaml
+        // uses the short "X" form. If users write "KeyL" they get None and the
+        // action silently has no keys; that's a config error we surface at
+        // action-load time (empty action vector).
+        assert_eq!(string_to_keycode("KeyL"), None);
+        assert_eq!(string_to_keycode("Digit3"), None);
     }
 
     #[test]

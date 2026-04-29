@@ -65,10 +65,7 @@ impl Game for UiDemo {
     }
 
     fn update_ui(&mut self, ctx: &mut Context, input: &InputState) {
-        let white_tex = ctx
-            .assets
-            .texture_id("__vibe_ui_white")
-            .unwrap_or(TextureId(0));
+        let white_tex = ctx.assets.builtin_white().unwrap_or(TextureId(0));
         let vw = self.vw;
         let vh = self.vh;
 

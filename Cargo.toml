@@ -4,6 +4,7 @@ members = [
     "crates/vibe2d",
     "crates/vibe_render",
     "crates/vibe_physics",
+    "crates/vibe_aoi",
     "crates/vibe_audio",
     "crates/vibe_input",
     "crates/vibe_asset",
@@ -16,6 +17,7 @@ members = [
     "examples/tetris",
     "examples/mari0",
     "examples/ui",
+    "examples/aoi-demo",
 ]
 
 [workspace.package]
@@ -28,6 +30,7 @@ license = "MIT"
 vibe2d = { path = "crates/vibe2d" }
 vibe_render = { path = "crates/vibe_render" }
 vibe_physics = { path = "crates/vibe_physics" }
+vibe_aoi = { path = "crates/vibe_aoi" }
 vibe_audio = { path = "crates/vibe_audio" }
 vibe_input = { path = "crates/vibe_input" }
 vibe_asset = { path = "crates/vibe_asset" }

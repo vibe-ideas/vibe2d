@@ -1,0 +1,26 @@
+[package]
+name = "aoi-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["vdp"]
+# vdp on the demo enables both `vibe2d/vdp` (the in-game WebSocket
+# server) and `vibe_aoi/vdp` (the JSON serialization helpers used by
+# `AoiWorld::handle_vdp`). Keeping the two crates' feature flags
+# spelled the same way matches the project-wide convention in AGENTS.md.
+vdp = ["vibe2d/vdp", "vibe_aoi/vdp", "dep:serde_json"]
+
+[dependencies]
+vibe2d = { workspace = true }
+vibe_aoi = { workspace = true }
+glam.workspace = true
+tracing.workspace = true
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+vibe_test = { workspace = true, features = ["vdp"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+anyhow.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,45 @@
+meta:
+  name: "AOI Demo"
+  version: "0.1.0"
+
+window:
+  # Virtual resolution is upscaled 2x for the physical window. The
+  # right gutter (`virtual_width - WORLD_W`) hosts the stats panel
+  # so it never overlaps the AOI world (the leftmost 512 virtual px
+  # — see WORLD_W in src/main.rs). Gutter widened to 208 virtual px
+  # (1440 - 1024 physical) so the longest stats line —
+  # "square: NNN (filtered)" — fits without horizontal clipping at
+  # 14 px body font.
+  width: 1440
+  height: 576
+  title: "AOI Demo - Vibe2D"
+  vsync: true
+
+virtual_resolution:
+  # Layout: [0, 512) = AOI world (matches WORLD_W),
+  #         [512, 720) = side panel area for stats UI.
+  width: 720
+  height: 288
+
+assets:
+  fonts:
+    body: "assets/fonts/ui.ttf:14"
+    small: "assets/fonts/ui.ttf:10"
+
+input:
+  actions:
+    pause:
+      keys: ["Space"]
+    # Toggle distance-LOD on the moving observer circles. When LOD is
+    # off, observers see all round dots inside their radius; when on,
+    # they additionally drop dots beyond LOD_RADIUS, which simulates a
+    # network LOD culling step.
+    toggle_lod:
+      keys: ["L"]
+
+debug:
+  vdp:
+    enabled: true
+    # Per AGENTS.md port allocation: flappy-bird=9229, ui-demo=9230,
+    # tetris=9231, aoi-demo=9232.
+    port: 9232

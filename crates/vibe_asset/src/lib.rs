@@ -2,7 +2,13 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
-use vibe_render::{Font, Renderer, Texture, TextureId};
+use vibe_render::{Font, Renderer, Texture, TextureId, builtin};
+
+/// Re-export of [`vibe_render::builtin`] — names under which the engine
+/// registers its runtime-generated "atom" textures. Re-exported here so
+/// asset-layer callers don't need an explicit `vibe_render` dependency
+/// just to reference the canonical names.
+pub use vibe_render::builtin as builtin_textures;
 
 /// Manages loaded game assets (textures, fonts).
 ///
@@ -148,5 +154,28 @@ impl AssetManager {
         self.textures.push(texture);
         self.texture_names.insert(name.to_string(), id);
         id
+    }
+
+    /// Look up the engine's built-in 1×1 white pixel texture by its
+    /// canonical name. Returns `None` only on test/headless paths that
+    /// don't run the engine's `on_init` (where it's registered).
+    ///
+    /// Prefer this over `texture_id("__vibe_ui_white")`: it survives
+    /// rename of the underlying string and gives game code a clearer
+    /// "I'm asking for the engine's white-pixel atom" intent.
+    pub fn builtin_white(&self) -> Option<TextureId> {
+        self.texture_id(builtin::WHITE)
+    }
+
+    /// Look up the engine's built-in antialiased filled-circle texture.
+    /// Same semantics as [`Self::builtin_white`].
+    pub fn builtin_circle_filled(&self) -> Option<TextureId> {
+        self.texture_id(builtin::CIRCLE_FILLED)
+    }
+
+    /// Look up the engine's built-in antialiased ring texture.
+    /// Same semantics as [`Self::builtin_white`].
+    pub fn builtin_circle_ring(&self) -> Option<TextureId> {
+        self.texture_id(builtin::CIRCLE_RING)
     }
 }

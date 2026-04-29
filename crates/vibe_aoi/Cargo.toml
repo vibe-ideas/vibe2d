@@ -1,0 +1,17 @@
+[package]
+name = "vibe_aoi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Enables JSON serialization helpers and `AoiWorld::handle_vdp` for use
+# from a game's `handle_vdp()` method. Stripped from release builds when
+# unset, leaving the crate as a pure CPU-only spatial query library.
+vdp = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+glam.workspace = true
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }

@@ -598,78 +598,14 @@ impl Renderer {
         }
         Ok(())
     }
-
-    /// Create a 1×1 white pixel texture for UI rectangle rendering.
-    ///
-    /// This is a runtime-generated internal texture, not a user asset.
-    /// The caller is responsible for registering the returned `Texture`
-    /// into `AssetManager`.
-    pub fn create_white_pixel_texture(&self) -> Texture {
-        let white_pixel_data: [u8; 4] = [255, 255, 255, 255];
-
-        let size = wgpu::Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        };
-
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("__vibe_ui_white"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &white_pixel_data,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4),
-                rows_per_image: Some(1),
-            },
-            size,
-        );
-
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("__vibe_ui_white_bind_group"),
-        });
-
-        Texture {
-            texture,
-            view,
-            bind_group,
-            width: 1,
-            height: 1,
-        }
-    }
 }
+
+// ── Note: procedural texture creation lives in `procedural.rs` ─────
+// `create_white_pixel_texture` / `create_filled_circle_texture` /
+// `create_ring_texture` / `create_rgba_texture` are implemented in
+// `procedural.rs` as additional `impl Renderer` blocks, alongside the
+// pure-CPU pixel rasterizers (`build_filled_circle_pixels`,
+// `build_ring_pixels`) they use. Keeping them out of this file keeps
+// `renderer.rs` focused on the GPU pipeline (init, batching, draw,
+// screenshot) and lets the rasterizers be unit-tested without spinning
+// up a `Renderer`.
