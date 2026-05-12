@@ -123,7 +123,7 @@ struct ResponseDrain {
 }
 
 thread_local! {
-    static RESPONSE_DRAIN: std::cell::RefCell<Option<ResponseDrain>> = std::cell::RefCell::new(None);
+    static RESPONSE_DRAIN: std::cell::RefCell<Option<ResponseDrain>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Determine the relay WebSocket URL from the current page location.
@@ -137,9 +137,7 @@ pub fn default_relay_url() -> Option<String> {
     if let Ok(search) = location.search() {
         for param in search.trim_start_matches('?').split('&') {
             if let Some(value) = param.strip_prefix("vdp_relay=") {
-                let url = js_sys::decode_uri_component(value)
-                    .ok()
-                    .map(|s| String::from(s))?;
+                let url = js_sys::decode_uri_component(value).ok().map(String::from)?;
                 // Ensure it ends with /game
                 if url.ends_with("/game") {
                     return Some(url);

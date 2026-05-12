@@ -64,6 +64,7 @@ async fn handle_connection(
 
     let ws_stream = tokio_tungstenite::accept_hdr_async(
         stream,
+        #[allow(clippy::result_large_err)]
         |req: &tokio_tungstenite::tungstenite::handshake::server::Request,
          resp: tokio_tungstenite::tungstenite::handshake::server::Response| {
             if req.uri().path() == "/game" {
