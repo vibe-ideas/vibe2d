@@ -18,6 +18,7 @@ members = [
     "examples/mari0",
     "examples/ui",
     "examples/aoi-demo",
+    "examples/tactics-demo",
 ]
 
 [workspace.package]
