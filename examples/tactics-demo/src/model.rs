@@ -145,13 +145,6 @@ impl Unit {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MenuChoice {
-    Attack,
-    Wait,
-    Cancel,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PendingAction {
     None,
     Selected {

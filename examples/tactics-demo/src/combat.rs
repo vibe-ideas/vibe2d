@@ -1,6 +1,6 @@
 //! Battle preview, damage, counter, double attack, and death resolution.
 
-use crate::model::{Faction, GridPos, Unit, UnitId};
+use crate::model::{GridPos, Unit, UnitId};
 
 #[derive(Debug, Clone)]
 pub struct CombatPreview {
@@ -139,7 +139,7 @@ pub fn resolve_combat(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Weapon;
+    use crate::model::{Faction, Weapon};
 
     fn make_unit(
         id: UnitId,
