@@ -504,8 +504,20 @@ D 完成后：
 - 新增 `LaunchOptions::visible(bool)` / `LaunchOptions::release(bool)`
 - CI 新 job：`vdp-integration`（ui-demo + Xvfb + lavapipe，~4 分钟）
 - 新 workflow：`playthrough.yml`（pull_request_target + 三 job 权限隔离）
-- 新测试：`examples/ui/tests/playthrough.rs`（人速场景，~12s）
+- 新测试：5 个 demo 各自 `examples/<game>/tests/playthrough.rs`（aoi-demo / flappy-bird / mari0 / tetris / ui-demo，~9-12s 一个），全部用同一套 `GameHarness` + `tokio::sleep` 人速节奏
 - AGENTS.md「为游戏编写测试」+「测试与验证」小节同步更新
+
+### 扩到全部 demo（2026-05-16 后续）
+
+Step 4 原计划只录 1 个 demo，后来扩到全部 5 个：
+
+- `playthrough.yml` 的 `record` job 改成 5-way matrix，`fail-fast: false`，1 个 demo 挂不影响其他 4 个
+- 每个 matrix entry 上传独立 artifact `playthrough-${pkg}`，文件名 `pr-${PR}-${SHA}-${pkg}.gif`
+- `publish` job 改 `if: always()`，下载所有 artifact 拼成**单条**评论里 inline 全部 GIF
+- `cleanup` 的 glob `pr-${PR}-*.gif` 无需改动，自动覆盖多文件
+- 窗口尺寸不一（aoi 1440×576 / flappy 1280×720 / mari0 1280×960 / tetris 800×700 / ui 1024×640），随 matrix 变量传给 Xvfb + x11grab
+
+新踩的小坑：`engine.simulateInput` 的 `key` 用**短**形式（`"L"` / `"Left"` / `"Space"` ……），不是 winit 长形式（`"KeyL"` / `"ArrowLeft"`），传错被 `Unknown key` 拒掉。已记入 AGENTS.md「VDP 按键命名」段。
 
 ### 合并后必须做的两步（不做就没 GIF）
 

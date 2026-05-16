@@ -298,7 +298,12 @@ Vibe2D 分两层：
 3. 在 `examples/<game>/tests/<name>.rs` 中写 `#[tokio::test(flavor = "multi_thread")] #[ignore]` 测试，用 `vibe_test::GameHarness::launch("<game>", <port>)` 启动进程并拿到一个带 VDP 客户端的 harness。
 4. 运行：`cargo test -p <game> -- --ignored --test-threads=1`（必须串行，因为 harness 占用固定 VDP 端口）。
 
-参考样例见 `examples/ui/tests/vdp_ui.rs`（断言型）和 `examples/ui/tests/playthrough.rs`（无断言、用于 CI GIF 录制的人速场景）。
+参考样例：
+
+- 断言型：`examples/ui/tests/vdp_ui.rs`、`examples/aoi-demo/tests/vdp_aoi.rs`
+- 无断言（CI GIF 录制人速场景）：`examples/<game>/tests/playthrough.rs` 每个 demo 都有一个，全部走同一套 `GameHarness::launch` + `simulate_key_*` / `ui_*` + `tokio::time::sleep` 节奏
+
+**VDP 按键命名**（坑过几次了）：`engine.simulateInput` 的 `key` 参数用**短**形式 —— `"L"`、`"Left" / "Right" / "Up" / "Down"`、`"Space"`、`"Enter"`、`"ShiftLeft"` ——**不**是 winit 的长形式（`"KeyL"`、`"ArrowLeft"` 等），传错会被服务端 `Unknown key: <name>` 拒绝。权威别名表在 [`crates/vibe_input/src/lib.rs:303`](crates/vibe_input/src/lib.rs#L303) `string_to_keycode()`。`game.yaml` 的 `input.actions.*.keys` 用的是同一套，可以直接照抄。
 
 **Headless 运行**（默认开启）：
 
