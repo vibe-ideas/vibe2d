@@ -1,0 +1,148 @@
+name: Playthrough Verify (sandbox)
+
+# Temporary sibling of `playthrough.yml`, kept around only while
+# iterating on the recording recipe (Xvfb + WM + Vulkan + ffmpeg).
+#
+# Why a separate workflow:
+#   * `playthrough.yml` triggers via `pull_request_target` and that
+#     event reads its YAML from the default branch — so any fix to
+#     the recording recipe in a PR can't take effect on the PR's
+#     own run, only after merge. Painful to iterate.
+#   * This workflow triggers on `push` and `workflow_dispatch`, so
+#     it always runs the YAML and code from the pushed branch. The
+#     PR's own pushes verify the fix immediately.
+#
+# Compared to playthrough.yml: no publish job, no orphan-branch
+# checkout, no PR comment. GIFs land in the run's artifacts and the
+# author downloads them to verify by eye.
+#
+# Once `playthrough.yml`'s recipe is known-good, delete this file
+# in the same PR that promotes the recipe to main.
+
+on:
+  push:
+    branches:
+      - 'fix/playthrough-**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    name: Record ${{ matrix.game.pkg }} (verify)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        game:
+          - { pkg: aoi-demo, width: 1440, height: 576 }
+          - { pkg: flappy-bird, width: 1280, height: 720 }
+          - { pkg: mari0, width: 1280, height: 960 }
+          - { pkg: tetris, width: 800, height: 700 }
+          - { pkg: ui-demo, width: 1024, height: 640 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: playthrough-verify-${{ matrix.game.pkg }}
+
+      - name: Install audio + display + Vulkan + recording deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libxkbcommon-x11-0 \
+            xvfb \
+            mesa-vulkan-drivers \
+            vulkan-tools \
+            ffmpeg \
+            fluxbox \
+            x11-utils \
+            imagemagick
+
+      - name: Start Xvfb + fluxbox + ffmpeg recorder
+        env:
+          W: ${{ matrix.game.width }}
+          H: ${{ matrix.game.height }}
+        run: |
+          Xvfb :99 -screen 0 "${W}x${H}x24" \
+            +extension RANDR +extension GLX +extension COMPOSITE \
+            -noreset -ac &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 1
+
+          DISPLAY=:99 fluxbox -display :99 \
+            > /tmp/fluxbox.log 2>&1 &
+          sleep 1
+
+          mkdir -p /tmp/diag
+          for delay in 4 8 12; do
+            (
+              sleep "$delay"
+              DISPLAY=:99 xwininfo -root -tree \
+                > "/tmp/diag/xwininfo-${delay}s.txt" 2>&1 || true
+              DISPLAY=:99 import -window root \
+                "/tmp/diag/screen-${delay}s.png" 2>/dev/null || true
+            ) &
+          done
+
+          ffmpeg -y -f x11grab -video_size "${W}x${H}" -framerate 30 \
+            -i :99 -c:v libx264 -pix_fmt yuv420p \
+            /tmp/play.mp4 \
+            > /tmp/ffmpeg.log 2>&1 &
+          echo $! > /tmp/ffmpeg.pid
+
+      - name: Run playthrough scenario
+        env:
+          WGPU_BACKEND: vulkan
+          RUST_LOG: warn
+          VIBE_TEST_RELEASE: "1"
+          VIBE_TEST_FORCE_VISIBLE: "1"
+          VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
+        run: |
+          cargo test -p ${{ matrix.game.pkg }} --release \
+            --test playthrough -- --ignored --nocapture
+
+      - name: Dump child game logs on failure
+        if: failure()
+        run: |
+          dir="${{ runner.temp }}/child-logs"
+          if [ -d "$dir" ]; then
+            for f in "$dir"/*.log; do
+              echo "::group::$(basename "$f")"
+              cat "$f"
+              echo "::endgroup::"
+            done
+          else
+            echo "No child log dir at $dir"
+          fi
+
+      - name: Stop recorder + convert to GIF
+        if: always()
+        run: |
+          kill -INT "$(cat /tmp/ffmpeg.pid)" || true
+          sleep 2
+          if [ -f /tmp/play.mp4 ]; then
+            ffmpeg -y -i /tmp/play.mp4 \
+              -vf "fps=15,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+              /tmp/play.gif
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-${{ matrix.game.pkg }}
+          path: |
+            /tmp/play.gif
+            /tmp/play.mp4
+            /tmp/diag/
+            /tmp/ffmpeg.log
+            /tmp/fluxbox.log
+          retention-days: 7
+          if-no-files-found: warn
