@@ -14,54 +14,51 @@
 
 use std::time::Duration;
 
-use vibe_test::GameHarness;
+use vibe_test::{GameHarness, ScreenshotPacer};
 
 const GAME_PACKAGE: &str = "ui-demo";
 // Matches `examples/ui/game.yaml` -> debug.vdp.port.
 const VDP_PORT: u16 = 9230;
-
-/// Roughly one human "beat" — long enough for the GIF reader's eye to track
-/// what just happened. 700ms keeps the full scenario under 15 s while still
-/// looking deliberate.
-async fn beat() {
-    tokio::time::sleep(Duration::from_millis(700)).await;
-}
+// A human "beat" — long enough for a viewer's eye to track what just
+// happened. 700ms keeps the full scenario under 15s.
+const BEAT: Duration = Duration::from_millis(700);
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "demo recording — used by .github/workflows/playthrough-record.yml"]
+#[ignore = "demo recording — used by .github/workflows/playthrough.yml"]
 async fn ui_demo_full_playthrough() {
     let mut h = GameHarness::launch(GAME_PACKAGE, VDP_PORT)
         .await
         .expect("launch ui-demo");
 
-    // CI sets VIBE_TEST_RECORDING_DIR — this spawns a background task
-    // that polls game.screenshot at 15fps and writes numbered PNGs.
-    // Local runs are unaffected.
-    let _recorder = h.start_recorder(GAME_PACKAGE, 15).await.ok().flatten();
+    // No-op locally; in CI (VIBE_TEST_RECORDING_DIR set) every
+    // `pacer.sleep(...)` below interleaves screenshots at 15fps onto
+    // the harness's existing VDP connection. VDP server only accepts
+    // one client at a time so we cannot use a background task.
+    let mut pacer = ScreenshotPacer::new(GAME_PACKAGE, 15);
 
     // Let the title / initial layout settle on screen.
-    beat().await;
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
+    pacer.sleep(&mut h, BEAT).await;
 
     // Click the counter button a few times — viewer sees the "Clicks: N"
     // label tick up.
     for _ in 0..3 {
         h.ui_click("btn_click").await.unwrap();
-        beat().await;
+        pacer.sleep(&mut h, BEAT).await;
     }
 
     // Type and submit a CJK message — exercises both the text input widget
     // and the IME font path, which is one of the demo's main reasons to exist.
     h.ui_set_text("chat_input", "你好 vibe2d").await.unwrap();
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
     h.ui_submit("chat_input").await.unwrap();
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
 
     // Follow up with an English message so the scroll list visibly grows.
     h.ui_set_text("chat_input", "hello world").await.unwrap();
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
     h.ui_submit("chat_input").await.unwrap();
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
 
     // Fill enough lines to overflow the visible area, then scroll-to-bottom
     // so the GIF ends on the scroll animation.
@@ -70,11 +67,12 @@ async fn ui_demo_full_playthrough() {
             .await
             .unwrap();
         h.ui_submit("chat_input").await.unwrap();
-        // No `beat()` here — submit-spam happens fast on purpose so the GIF
-        // shows a burst of activity, then we slow back down for the scroll.
+        // No pacer here — submit-spam happens fast on purpose so the
+        // GIF shows a burst of activity, then we slow back down for
+        // the scroll. Skipping screenshots during the burst is fine.
     }
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
     h.ui_scroll_to_bottom("msg_list").await.unwrap();
-    beat().await;
-    beat().await;
+    pacer.sleep(&mut h, BEAT).await;
+    pacer.sleep(&mut h, BEAT).await;
 }

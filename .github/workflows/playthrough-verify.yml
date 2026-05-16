@@ -29,17 +29,17 @@ jobs:
   record:
     name: Record ${{ matrix.game.pkg }} (verify)
     runs-on: ubuntu-latest
+    # Hard cap so a hung recorder can't burn 60min × N runners again.
+    # Cold compile is ~3-4min, playthrough ~15s, ffmpeg ~5s — 15min
+    # is plenty with headroom.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
+      # Single entry while debugging the VDP-screenshot recorder.
+      # Once ui-demo's end-to-end pipeline produces a valid MP4 in
+      # the artifact, fan back out to all 5 demos.
       matrix:
-        # No `width`/`height` here anymore — the VDP screenshot path
-        # uses the game's actual swapchain size, so ffmpeg picks it
-        # up from the PNG headers automatically.
         game:
-          - { pkg: aoi-demo }
-          - { pkg: flappy-bird }
-          - { pkg: mari0 }
-          - { pkg: tetris }
           - { pkg: ui-demo }
     steps:
       - uses: actions/checkout@v4

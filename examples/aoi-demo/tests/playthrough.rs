@@ -12,15 +12,12 @@
 
 use std::time::Duration;
 
-use vibe_test::GameHarness;
+use vibe_test::{GameHarness, ScreenshotPacer};
 
 const GAME_PACKAGE: &str = "aoi-demo";
 // Matches `examples/aoi-demo/game.yaml` -> debug.vdp.port.
 const VDP_PORT: u16 = 9232;
-
-async fn beat() {
-    tokio::time::sleep(Duration::from_millis(700)).await;
-}
+const BEAT: Duration = Duration::from_millis(700);
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "demo recording — used by .github/workflows/playthrough.yml"]
@@ -29,26 +26,26 @@ async fn aoi_demo_playthrough() {
         .await
         .expect("launch aoi-demo");
 
-    // CI sets VIBE_TEST_RECORDING_DIR — see `examples/ui/tests/playthrough.rs`
-    // for the why (x11grab on Xvfb captures black; VDP screenshots don't).
-    let _recorder = h.start_recorder(GAME_PACKAGE, 15).await.ok().flatten();
+    // See ui-demo's playthrough.rs for why this is synchronous (VDP
+    // server is single-client; can't open a second connection).
+    let mut pacer = ScreenshotPacer::new(GAME_PACKAGE, 15);
 
     // Let the observers free-roam and show off the lit-set lighting.
     for _ in 0..6 {
-        beat().await;
+        pacer.sleep(&mut h, BEAT).await;
     }
 
     // Tap `L` to flip the distance-LOD culling on, so the GIF shows the
     // far-field dots fade out — that's the demo's main pedagogical bit.
     h.simulate_key_tap("L").await.unwrap();
     for _ in 0..6 {
-        beat().await;
+        pacer.sleep(&mut h, BEAT).await;
     }
 
     // Toggle it back off so a viewer that catches the second half
     // sees what "no LOD" looks like as the contrast.
     h.simulate_key_tap("L").await.unwrap();
     for _ in 0..4 {
-        beat().await;
+        pacer.sleep(&mut h, BEAT).await;
     }
 }

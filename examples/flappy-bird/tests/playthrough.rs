@@ -11,7 +11,7 @@
 
 use std::time::Duration;
 
-use vibe_test::GameHarness;
+use vibe_test::{GameHarness, ScreenshotPacer};
 
 const GAME_PACKAGE: &str = "flappy-bird";
 // Matches `examples/flappy-bird/game.yaml` -> debug.vdp.port.
@@ -24,20 +24,19 @@ async fn flappy_bird_playthrough() {
         .await
         .expect("launch flappy-bird");
 
-    // CI sets VIBE_TEST_RECORDING_DIR — see `examples/ui/tests/playthrough.rs`
-    // for the why (x11grab on Xvfb captures black; VDP screenshots don't).
-    let _recorder = h.start_recorder(GAME_PACKAGE, 15).await.ok().flatten();
+    // See ui-demo's playthrough.rs for why this is synchronous.
+    let mut pacer = ScreenshotPacer::new(GAME_PACKAGE, 15);
 
     // Initial pause so the title / first frame is visible in the GIF.
-    tokio::time::sleep(Duration::from_millis(800)).await;
+    pacer.sleep(&mut h, Duration::from_millis(800)).await;
 
     // Tap to start (Space is also the "flap" key after game start).
     // 12 flaps over ~5 s — roughly the rhythm a human plays at.
     for _ in 0..12 {
         h.simulate_key_tap("Space").await.unwrap();
-        tokio::time::sleep(Duration::from_millis(420)).await;
+        pacer.sleep(&mut h, Duration::from_millis(420)).await;
     }
 
     // Hold the last frame a beat so a viewer registers the score / fail.
-    tokio::time::sleep(Duration::from_millis(1200)).await;
+    pacer.sleep(&mut h, Duration::from_millis(1200)).await;
 }
