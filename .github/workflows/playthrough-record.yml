@@ -36,6 +36,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install audio + display + Vulkan + recording deps
+        # gifski isn't in Ubuntu apt (it's a cargo-installed Rust binary).
+        # We use ffmpeg's palettegen/paletteuse for the GIF instead — same
+        # quality, one less dependency to install.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -43,8 +46,7 @@ jobs:
             xvfb \
             mesa-vulkan-drivers \
             vulkan-tools \
-            ffmpeg \
-            gifski
+            ffmpeg
 
       - name: Start Xvfb + ffmpeg recorder
         run: |
@@ -72,12 +74,16 @@ jobs:
             --test playthrough -- --ignored --nocapture
 
       - name: Stop recorder + convert to GIF
+        # Single-pass split palettegen → paletteuse. Quality is close to
+        # gifski for this kind of content while reusing the ffmpeg we
+        # already installed.
         run: |
           kill -INT "$(cat /tmp/ffmpeg.pid)" || true
           # Wait for ffmpeg to flush the trailer.
           sleep 2
-          gifski -o /tmp/play.gif --fps 15 \
-            --width 720 --quality 85 /tmp/play.mp4
+          ffmpeg -y -i /tmp/play.mp4 \
+            -vf "fps=15,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+            /tmp/play.gif
 
       - name: Save PR metadata for publish job
         run: |
