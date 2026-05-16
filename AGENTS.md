@@ -327,9 +327,11 @@ let mut h = GameHarness::launch_with(opts).await.unwrap();
 
 单 workflow + `pull_request_target`，按 job 隔离权限：
 
-- `record` — `contents: read`，跑 `examples/ui/tests/playthrough.rs`、ffmpeg 录屏、传 artifact
-- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，只下载 artifact + push GIF 到 orphan 分支 `playthrough-assets` + 给 PR 贴 inline 评论
-- `cleanup` — `contents: write`，PR closed 时删对应 GIF
+- `record` — matrix 跑全部 5 个 demo（aoi-demo / flappy-bird / mari0 / tetris / ui-demo），各自的 `examples/<game>/tests/playthrough.rs` + ffmpeg 录屏。`contents: read`，1 个 demo 挂不影响其他 4 个（`fail-fast: false`）
+- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，下载所有 artifact + push 5 个 GIF 到 orphan 分支 `playthrough-assets` + **一条**评论里 inline 全部 5 张图
+- `cleanup` — `contents: write`，PR closed 时删该 PR 的所有 GIF（glob `pr-${PR}-*.gif`）
+
+**新增 demo 时**：在 `examples/<game>/tests/playthrough.rs` 写无断言的人速场景（不要 `pause()`），在 `playthrough.yml` 的 `matrix.game` 列表里加一条 `{ pkg, width, height }`（窗口尺寸取自 `game.yaml` 的 `window:` 节，传给 ffmpeg 的 x11grab 用）。
 
 **一次性 setup**（首次启用前）：
 

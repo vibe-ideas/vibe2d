@@ -25,8 +25,6 @@ name: PR Playthrough
 
 on:
   pull_request_target:
-    # closed is needed for the cleanup job; opened/synchronize/reopened
-    # for record + publish.
     types: [opened, synchronize, reopened, closed]
     paths:
       - 'crates/vibe_render/**'
@@ -36,40 +34,50 @@ on:
       - 'examples/**'
       - '.github/workflows/playthrough.yml'
 
-# Cancel superseded record+publish runs for the same PR. Keyed on PR
-# number so force-pushes to the same PR collapse cleanly.
 concurrency:
   group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-# Default to no permissions. Jobs opt in to the minimum they need.
 permissions: {}
 
 jobs:
-  # ── Record: runs PR-controlled code, READ-ONLY token ──────────
+  # ── Record: matrix over every demo, READ-ONLY token ───────────
   record:
-    name: Record ui-demo playthrough
+    name: Record ${{ matrix.game.pkg }}
     runs-on: ubuntu-latest
     if: github.event.action != 'closed'
     permissions:
       contents: read
+    strategy:
+      # One game's playthrough flaking shouldn't blank the whole
+      # comment — let the others finish and we'll post what we got.
+      fail-fast: false
+      matrix:
+        # Window dims come from each `examples/<pkg>/game.yaml`
+        # window section. They drive the x11grab capture size so
+        # ffmpeg records exactly the game window, no letterboxing.
+        game:
+          - { pkg: aoi-demo, width: 1440, height: 576 }
+          - { pkg: flappy-bird, width: 1280, height: 720 }
+          - { pkg: mari0, width: 1280, height: 960 }
+          - { pkg: tetris, width: 800, height: 700 }
+          - { pkg: ui-demo, width: 1024, height: 640 }
     steps:
-      # Explicitly check out PR HEAD (pull_request_target defaults
-      # to base/main otherwise). Using `head.sha` instead of a
-      # branch name pins to the exact commit that triggered this
-      # run, immune to a force-push mid-CI.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Per-game cache key so 5 runners don't trash each other's
+          # incremental cache when they all write back at once.
+          key: playthrough-${{ matrix.game.pkg }}
 
       - name: Install audio + display + Vulkan + recording deps
-        # gifski isn't in Ubuntu apt (Rust binary distributed via cargo),
-        # so we use ffmpeg's palettegen/paletteuse instead.
-        # libxkbcommon-x11-0 is the runtime winit dlopens for X11 keyboard
-        # mapping; without it the spawned game panics on startup.
+        # gifski isn't in Ubuntu apt; we use ffmpeg's
+        # palettegen/paletteuse instead. libxkbcommon-x11-0 is the
+        # runtime winit dlopens for X11 keyboard mapping.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -81,13 +89,14 @@ jobs:
             ffmpeg
 
       - name: Start Xvfb + ffmpeg recorder
+        env:
+          W: ${{ matrix.game.width }}
+          H: ${{ matrix.game.height }}
         run: |
-          # Match window size from examples/ui/game.yaml so x11grab
-          # captures the whole window cleanly.
-          Xvfb :99 -screen 0 1024x640x24 &
+          Xvfb :99 -screen 0 ${W}x${H}x24 &
           echo "DISPLAY=:99" >> $GITHUB_ENV
           sleep 1
-          ffmpeg -y -f x11grab -video_size 1024x640 -framerate 30 \
+          ffmpeg -y -f x11grab -video_size ${W}x${H} -framerate 30 \
             -i :99 -c:v libx264 -pix_fmt yuv420p \
             /tmp/play.mp4 \
             > /tmp/ffmpeg.log 2>&1 &
@@ -101,7 +110,7 @@ jobs:
           VIBE_TEST_FORCE_VISIBLE: "1"
           VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
         run: |
-          cargo test -p ui-demo --release \
+          cargo test -p ${{ matrix.game.pkg }} --release \
             --test playthrough -- --ignored --nocapture
 
       - name: Dump child game logs on failure
@@ -131,70 +140,120 @@ jobs:
           mkdir -p /tmp/meta
           echo "${{ github.event.pull_request.number }}" > /tmp/meta/pr_number
           echo "${{ github.event.pull_request.head.sha }}" > /tmp/meta/head_sha
+          echo "${{ matrix.game.pkg }}" > /tmp/meta/pkg
 
       - uses: actions/upload-artifact@v4
         with:
-          name: playthrough
+          name: playthrough-${{ matrix.game.pkg }}
           path: |
             /tmp/play.gif
             /tmp/meta/
           retention-days: 7
 
-  # ── Publish: WRITE token, NEVER touches PR code ────────────────
+  # ── Publish: WRITE token, NEVER touches PR code ───────────────
   publish:
     name: Publish playthrough comment
     runs-on: ubuntu-latest
     needs: [record]
-    if: github.event.action != 'closed'
+    # `always()` so a single matrix entry failing still lets us
+    # publish whatever GIFs the rest produced. Inside the steps we
+    # tolerate missing artifacts gracefully.
+    if: ${{ always() && github.event.action != 'closed' }}
     permissions:
       contents: write
       pull-requests: write
     steps:
-      # Check out the assets branch FROM THE BASE REPO. Do not
-      # specify a ref like `head.sha` here — that would pull in
-      # PR-controlled code and defeat the whole isolation model.
       - uses: actions/checkout@v4
         with:
           ref: playthrough-assets
 
-      - uses: actions/download-artifact@v4
+      - name: Download all record artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: playthrough
+          pattern: playthrough-*
           path: /tmp/dl
 
-      - name: Read PR metadata
-        id: meta
+      - name: Stage GIFs + build comment body
+        id: stage
+        # Walks every downloaded artifact dir, copies the GIF into
+        # the assets branch checkout under a per-game name, and
+        # builds a single markdown body that inlines each GIF that
+        # exists. Writes the body via $GITHUB_OUTPUT so the next
+        # step (github-script) can read it without re-shelling.
         run: |
-          echo "pr=$(cat /tmp/dl/meta/pr_number)" >> "$GITHUB_OUTPUT"
-          echo "sha=$(cat /tmp/dl/meta/head_sha)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          shopt -s nullglob
 
-      - name: Commit GIF to assets branch
-        env:
-          PR: ${{ steps.meta.outputs.pr }}
-          SHA: ${{ steps.meta.outputs.sha }}
-        run: |
-          SHORT="${SHA:0:7}"
-          cp /tmp/dl/play.gif "pr-${PR}-${SHORT}.gif"
-          git config user.name "github-actions[bot]"
+          if [ ! -d /tmp/dl ] || [ -z "$(ls -A /tmp/dl 2>/dev/null)" ]; then
+            echo "No artifacts downloaded — nothing to publish."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # PR/SHA are the same across all matrix entries; read from
+          # whichever artifact happens to land first.
+          pr=""
+          sha=""
+
+          body_file=/tmp/comment_body.md
+          : > "$body_file"
+          echo "### 🎮 Playthroughs" >> "$body_file"
+          echo "" >> "$body_file"
+
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "pr-${PR}-${SHORT}.gif"
-          git commit -m "playthrough: pr-${PR} @ ${SHORT}"
+
+          # Sort so the body is stable across re-runs.
+          for d in $(ls -1d /tmp/dl/playthrough-* 2>/dev/null | sort); do
+            pkg=$(cat "$d/meta/pkg" 2>/dev/null || echo "")
+            if [ -z "$pkg" ] || [ ! -f "$d/play.gif" ]; then
+              echo "Skipping $d (missing meta or play.gif)"
+              continue
+            fi
+            if [ -z "$pr" ]; then
+              pr=$(cat "$d/meta/pr_number")
+              sha=$(cat "$d/meta/head_sha")
+            fi
+            short="${sha:0:7}"
+            out="pr-${pr}-${short}-${pkg}.gif"
+            cp "$d/play.gif" "$out"
+            git add "$out"
+
+            url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${out}"
+            printf '#### %s\n\n![%s playthrough](%s)\n\n' \
+              "$pkg" "$pkg" "$url" >> "$body_file"
+          done
+
+          if git diff --cached --quiet; then
+            echo "No GIFs ready to publish — skipping commit + comment."
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "*Auto-generated from ${sha:0:7} via Xvfb + lavapipe + ffmpeg.*" >> "$body_file"
+
+          git commit -m "playthrough: pr-${pr} @ ${sha:0:7}"
           git push
 
-      - uses: actions/github-script@v7
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "body_file=$body_file" >> "$GITHUB_OUTPUT"
+          echo "skip=0" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: steps.stage.outputs.skip != '1'
+        uses: actions/github-script@v7
         env:
-          PR: ${{ steps.meta.outputs.pr }}
-          SHA: ${{ steps.meta.outputs.sha }}
+          PR: ${{ steps.stage.outputs.pr }}
+          BODY_FILE: ${{ steps.stage.outputs.body_file }}
         with:
           script: |
-            const pr = parseInt(process.env.PR, 10);
-            const short = process.env.SHA.slice(0, 7);
-            const url = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/playthrough-assets/pr-${pr}-${short}.gif`;
+            const fs = require('fs');
+            const body = fs.readFileSync(process.env.BODY_FILE, 'utf8');
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: pr,
-              body: `### 🎮 Playthrough\n\n![ui-demo playthrough](${url})\n\n*Auto-generated from ${short} via Xvfb + lavapipe + ffmpeg.*`,
+              issue_number: parseInt(process.env.PR, 10),
+              body,
             });
 
   # ── Cleanup: WRITE token, only on PR closed ────────────────────
