@@ -10,15 +10,11 @@
 
 use std::time::Duration;
 
-use vibe_test::GameHarness;
+use vibe_test::{GameHarness, ScreenshotPacer};
 
 const GAME_PACKAGE: &str = "tetris";
 // Matches `examples/tetris/game.yaml` -> debug.vdp.port.
 const VDP_PORT: u16 = 9229;
-
-async fn sleep(ms: u64) {
-    tokio::time::sleep(Duration::from_millis(ms)).await;
-}
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "demo recording — used by .github/workflows/playthrough.yml"]
@@ -27,33 +23,36 @@ async fn tetris_playthrough() {
         .await
         .expect("launch tetris");
 
-    sleep(800).await;
+    // See ui-demo's playthrough.rs for why this is synchronous.
+    let mut pacer = ScreenshotPacer::new(GAME_PACKAGE, 15);
+
+    pacer.sleep(&mut h, Duration::from_millis(800)).await;
 
     // Drift the first piece left a few cells.
     for _ in 0..3 {
         h.simulate_key_tap("Left").await.unwrap();
-        sleep(180).await;
+        pacer.sleep(&mut h, Duration::from_millis(180)).await;
     }
     // Rotate once (Up = rotate CW per game.yaml).
     h.simulate_key_tap("Up").await.unwrap();
-    sleep(400).await;
+    pacer.sleep(&mut h, Duration::from_millis(400)).await;
 
     // Soft drop until it locks-ish.
     h.simulate_key_press("Down").await.unwrap();
-    sleep(1500).await;
+    pacer.sleep(&mut h, Duration::from_millis(1500)).await;
     h.simulate_key_release("Down").await.unwrap();
-    sleep(400).await;
+    pacer.sleep(&mut h, Duration::from_millis(400)).await;
 
     // Second piece: drift right + rotate twice.
     for _ in 0..3 {
         h.simulate_key_tap("Right").await.unwrap();
-        sleep(180).await;
+        pacer.sleep(&mut h, Duration::from_millis(180)).await;
     }
     h.simulate_key_tap("Up").await.unwrap();
-    sleep(220).await;
+    pacer.sleep(&mut h, Duration::from_millis(220)).await;
     h.simulate_key_tap("Up").await.unwrap();
-    sleep(400).await;
+    pacer.sleep(&mut h, Duration::from_millis(400)).await;
 
     // Let the rest of the GIF play out naturally as pieces drop.
-    sleep(2500).await;
+    pacer.sleep(&mut h, Duration::from_millis(2500)).await;
 }

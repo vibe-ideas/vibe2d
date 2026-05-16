@@ -131,8 +131,12 @@ impl GameHarness {
             let (out, err) = open_log_pair(&log_path)
                 .with_context(|| format!("open child log {}", log_path.display()))?;
             cmd.stdout(out).stderr(err);
-            // Crank child logging up to info so the file is actually useful.
-            cmd.env("RUST_LOG", "info");
+            // Default to `info` so the log file is useful, but let
+            // `VIBE_TEST_CHILD_RUST_LOG` override for narrow trace
+            // selectors (e.g. winit/wgpu internals during CI debugging).
+            let rust_log =
+                std::env::var("VIBE_TEST_CHILD_RUST_LOG").unwrap_or_else(|_| "info".to_string());
+            cmd.env("RUST_LOG", rust_log);
         } else {
             cmd.stdout(Stdio::null()).stderr(Stdio::null());
         }

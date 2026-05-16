@@ -19,6 +19,19 @@ name: PR Playthrough
 #     PR code: they only check out the `playthrough-assets`
 #     branch from the base repo, never PR HEAD.
 #
+# Recording recipe:
+#   The harness's `ScreenshotPacer` (see crates/vibe_test) polls
+#   `game.screenshot` over VDP at 15fps and writes PNGs. This is a
+#   wgpu texture readback — totally independent of the X11 display
+#   path, which under Xvfb + lavapipe presents to a drawable that
+#   x11grab can't see (verified: VDP screenshots come back YAVG=103,
+#   x11grab gave YAVG=16/black). After the scenario completes,
+#   ffmpeg assembles the PNGs into both GIF (for inline comment
+#   preview) and MP4 (for scrubable download). GitHub's PR-comment
+#   sanitizer only renders <video> tags whose src is a
+#   user-attachments URL (web UI drag-drop, no API), so GIF inline +
+#   MP4 link is the only working combo for an auto-posted comment.
+#
 # References:
 #   https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request_target
 #   https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
@@ -46,6 +59,10 @@ jobs:
     name: Record ${{ matrix.game.pkg }}
     runs-on: ubuntu-latest
     if: github.event.action != 'closed'
+    # Hard cap so a hung recorder can't burn 60min × N runners.
+    # Cold compile ~3min, playthrough ~12s, ffmpeg ~5s — 15min has
+    # plenty of headroom.
+    timeout-minutes: 15
     permissions:
       contents: read
     strategy:
@@ -53,15 +70,12 @@ jobs:
       # comment — let the others finish and we'll post what we got.
       fail-fast: false
       matrix:
-        # Window dims come from each `examples/<pkg>/game.yaml`
-        # window section. They drive the x11grab capture size so
-        # ffmpeg records exactly the game window, no letterboxing.
         game:
-          - { pkg: aoi-demo, width: 1440, height: 576 }
-          - { pkg: flappy-bird, width: 1280, height: 720 }
-          - { pkg: mari0, width: 1280, height: 960 }
-          - { pkg: tetris, width: 800, height: 700 }
-          - { pkg: ui-demo, width: 1024, height: 640 }
+          - { pkg: aoi-demo }
+          - { pkg: flappy-bird }
+          - { pkg: mari0 }
+          - { pkg: tetris }
+          - { pkg: ui-demo }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,10 +88,11 @@ jobs:
           # incremental cache when they all write back at once.
           key: playthrough-${{ matrix.game.pkg }}
 
-      - name: Install audio + display + Vulkan + recording deps
-        # gifski isn't in Ubuntu apt; we use ffmpeg's
-        # palettegen/paletteuse instead. libxkbcommon-x11-0 is the
-        # runtime winit dlopens for X11 keyboard mapping.
+      - name: Install audio + display + Vulkan + assembly deps
+        # Xvfb still required because winit's X11 backend needs an X
+        # connection to start. ffmpeg is the PNG → MP4 assembler.
+        # libxkbcommon-x11-0 is the runtime winit dlopens for X11
+        # keyboard mapping.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -88,28 +103,29 @@ jobs:
             vulkan-tools \
             ffmpeg
 
-      - name: Start Xvfb + ffmpeg recorder
-        env:
-          W: ${{ matrix.game.width }}
-          H: ${{ matrix.game.height }}
+      - name: Start Xvfb
         run: |
-          Xvfb :99 -screen 0 ${W}x${H}x24 &
-          echo "DISPLAY=:99" >> $GITHUB_ENV
+          # Generous virtual screen so different demos' window sizes
+          # all fit even if winit picks a non-(0,0) position.
+          Xvfb :99 -screen 0 1440x960x24 \
+            +extension RANDR +extension GLX +extension COMPOSITE \
+            -noreset -ac &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
           sleep 1
-          ffmpeg -y -f x11grab -video_size ${W}x${H} -framerate 30 \
-            -i :99 -c:v libx264 -pix_fmt yuv420p \
-            /tmp/play.mp4 \
-            > /tmp/ffmpeg.log 2>&1 &
-          echo $! > /tmp/ffmpeg.pid
 
-      - name: Run playthrough scenario
+      - name: Run playthrough scenario (with VDP-screenshot recorder)
         env:
           WGPU_BACKEND: vulkan
           RUST_LOG: warn
           VIBE_TEST_RELEASE: "1"
           VIBE_TEST_FORCE_VISIBLE: "1"
           VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
+          # ScreenshotPacer (crates/vibe_test) picks this up and
+          # writes ${dir}/<pkg>/####.png at 15fps on the harness's
+          # existing VDP connection.
+          VIBE_TEST_RECORDING_DIR: /tmp/recording
         run: |
+          mkdir -p /tmp/recording
           cargo test -p ${{ matrix.game.pkg }} --release \
             --test playthrough -- --ignored --nocapture
 
@@ -127,15 +143,37 @@ jobs:
             echo "No child log dir at $dir"
           fi
 
-      - name: Stop recorder + convert to GIF
+      - name: Assemble PNGs into GIF + MP4
+        if: always()
+        env:
+          PKG: ${{ matrix.game.pkg }}
         run: |
-          kill -INT "$(cat /tmp/ffmpeg.pid)" || true
-          sleep 2
-          ffmpeg -y -i /tmp/play.mp4 \
-            -vf "fps=15,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+          dir="/tmp/recording/${PKG}"
+          if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+            echo "No PNGs in $dir — skipping assembly."
+            exit 0
+          fi
+          # GIF for inline preview in PR comments. <video> tags get
+          # stripped by GitHub's sanitizer unless the src is a
+          # user-attachments URL (web UI drag-drop only — no API),
+          # so GIF is the only inline format that works for an
+          # auto-posted comment. Smaller width keeps it cheap.
+          ffmpeg -y -framerate 15 -i "$dir/%04d.png" \
+            -vf "scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
             /tmp/play.gif
+          # MP4 alongside as the higher-quality download — reviewers
+          # who want scrub controls click the link in the comment.
+          # h264 + yuv420p + faststart + even dims (libx264 requires).
+          ffmpeg -y -framerate 15 -i "$dir/%04d.png" \
+            -c:v libx264 -pix_fmt yuv420p \
+            -preset medium -crf 23 \
+            -movflags +faststart \
+            -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+            /tmp/play.mp4
+          ls -la /tmp/play.gif /tmp/play.mp4
 
       - name: Save PR metadata for publish job
+        if: always()
         run: |
           mkdir -p /tmp/meta
           echo "${{ github.event.pull_request.number }}" > /tmp/meta/pr_number
@@ -143,12 +181,15 @@ jobs:
           echo "${{ matrix.game.pkg }}" > /tmp/meta/pkg
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: playthrough-${{ matrix.game.pkg }}
           path: |
             /tmp/play.gif
+            /tmp/play.mp4
             /tmp/meta/
           retention-days: 7
+          if-no-files-found: warn
 
   # ── Publish: WRITE token, NEVER touches PR code ───────────────
   publish:
@@ -156,7 +197,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [record]
     # `always()` so a single matrix entry failing still lets us
-    # publish whatever GIFs the rest produced. Inside the steps we
+    # publish whatever MP4s the rest produced. Inside the steps we
     # tolerate missing artifacts gracefully.
     if: ${{ always() && github.event.action != 'closed' }}
     permissions:
@@ -173,13 +214,15 @@ jobs:
           pattern: playthrough-*
           path: /tmp/dl
 
-      - name: Stage GIFs + build comment body
+      - name: Stage GIF+MP4 + build comment body
         id: stage
-        # Walks every downloaded artifact dir, copies the GIF into
-        # the assets branch checkout under a per-game name, and
-        # builds a single markdown body that inlines each GIF that
-        # exists. Writes the body via $GITHUB_OUTPUT so the next
-        # step (github-script) can read it without re-shelling.
+        # For each game we publish two files: the GIF for inline
+        # preview in the PR comment (only format the GitHub
+        # sanitizer renders inline from raw.githubusercontent.com)
+        # and the MP4 as a "watch with controls" download link.
+        # See memory/github-pr-video-render — <video> tags only
+        # render for user-attachments URLs which there's no API to
+        # produce, so the GIF+link combo is the working compromise.
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -206,6 +249,7 @@ jobs:
           # Sort so the body is stable across re-runs.
           for d in $(ls -1d /tmp/dl/playthrough-* 2>/dev/null | sort); do
             pkg=$(cat "$d/meta/pkg" 2>/dev/null || echo "")
+            # Need at least the GIF; MP4 is bonus.
             if [ -z "$pkg" ] || [ ! -f "$d/play.gif" ]; then
               echo "Skipping $d (missing meta or play.gif)"
               continue
@@ -215,22 +259,31 @@ jobs:
               sha=$(cat "$d/meta/head_sha")
             fi
             short="${sha:0:7}"
-            out="pr-${pr}-${short}-${pkg}.gif"
-            cp "$d/play.gif" "$out"
-            git add "$out"
+            gif_out="pr-${pr}-${short}-${pkg}.gif"
+            cp "$d/play.gif" "$gif_out"
+            git add "$gif_out"
+            gif_url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${gif_out}"
 
-            url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${out}"
-            printf '#### %s\n\n![%s playthrough](%s)\n\n' \
-              "$pkg" "$pkg" "$url" >> "$body_file"
+            mp4_link=""
+            if [ -f "$d/play.mp4" ]; then
+              mp4_out="pr-${pr}-${short}-${pkg}.mp4"
+              cp "$d/play.mp4" "$mp4_out"
+              git add "$mp4_out"
+              mp4_url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${mp4_out}"
+              mp4_link=" · [📹 watch as MP4](${mp4_url})"
+            fi
+
+            printf '#### %s\n\n![%s playthrough](%s)\n\n_GIF inline preview%s_\n\n' \
+              "$pkg" "$pkg" "$gif_url" "$mp4_link" >> "$body_file"
           done
 
           if git diff --cached --quiet; then
-            echo "No GIFs ready to publish — skipping commit + comment."
+            echo "Nothing ready to publish — skipping commit + comment."
             echo "skip=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "*Auto-generated from ${sha:0:7} via Xvfb + lavapipe + ffmpeg.*" >> "$body_file"
+          echo "*Auto-generated from ${sha:0:7} via VDP screenshot recorder + ffmpeg.*" >> "$body_file"
 
           git commit -m "playthrough: pr-${pr} @ ${sha:0:7}"
           git push
@@ -258,7 +311,7 @@ jobs:
 
   # ── Cleanup: WRITE token, only on PR closed ────────────────────
   cleanup:
-    name: Remove playthrough GIFs for closed PR
+    name: Remove playthrough MP4s for closed PR
     runs-on: ubuntu-latest
     if: github.event.action == 'closed'
     permissions:
@@ -268,18 +321,20 @@ jobs:
         with:
           ref: playthrough-assets
 
-      - name: Delete this PR's GIFs
+      - name: Delete this PR's playthrough files
         env:
           PR: ${{ github.event.pull_request.number }}
         run: |
           shopt -s nullglob
-          files=( "pr-${PR}-"*.gif )
+          # Glob both new (.mp4) and legacy (.gif) artifacts so a PR
+          # opened before the MP4 migration still cleans up correctly.
+          files=( "pr-${PR}-"*.mp4 "pr-${PR}-"*.gif )
           if [ "${#files[@]}" -eq 0 ]; then
-            echo "No playthrough GIFs found for PR ${PR} — nothing to clean."
+            echo "No playthrough files found for PR ${PR} — nothing to clean."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm "${files[@]}"
-          git commit -m "cleanup: remove playthrough GIFs for closed pr-${PR}"
+          git commit -m "cleanup: remove playthrough files for closed pr-${PR}"
           git push
