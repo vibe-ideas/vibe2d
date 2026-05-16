@@ -98,29 +98,35 @@ jobs:
             cp "$dir"/*.log /tmp/diag/ 2>/dev/null || true
           fi
 
-      - name: Assemble PNGs into GIF
+      - name: Assemble PNGs into MP4
         if: always()
         env:
           PKG: ${{ matrix.game.pkg }}
         run: |
           dir="/tmp/recording/${PKG}"
           if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
-            echo "No PNGs in $dir — skipping GIF assembly."
+            echo "No PNGs in $dir — skipping MP4 assembly."
             exit 0
           fi
-          # Match the recorder's 15 fps so playback timing matches reality.
-          # palettegen/paletteuse for decent color count.
+          # MP4 over GIF: GitHub PR comments support inline <video>
+          # players with play/pause/scrub controls. h264 + yuv420p +
+          # faststart for universal browser playback. Even width/height
+          # enforced via `scale=trunc(iw/2)*2:trunc(ih/2)*2` because
+          # libx264 rejects odd dimensions.
           ffmpeg -y -framerate 15 -i "$dir/%04d.png" \
-            -vf "scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
-            /tmp/play.gif
-          ls -la /tmp/play.gif
+            -c:v libx264 -pix_fmt yuv420p \
+            -preset medium -crf 23 \
+            -movflags +faststart \
+            -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+            /tmp/play.mp4
+          ls -la /tmp/play.mp4
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: verify-${{ matrix.game.pkg }}
           path: |
-            /tmp/play.gif
+            /tmp/play.mp4
             /tmp/recording/${{ matrix.game.pkg }}/
             /tmp/diag/
           retention-days: 7
