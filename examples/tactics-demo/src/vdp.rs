@@ -115,6 +115,14 @@ pub fn handle(demo: &mut TacticsDemo, method: &str, params: &Value) -> Result<Va
             demo.wait_selected_action()?;
             Ok(json!({"status": "ok"}))
         }
+        "game.enterAttackTarget" => {
+            // Flow-mode: equivalent to clicking the Attack button in UI.
+            // Honors the PlayerAction phase precondition; pairs with
+            // `game.attack` which can finalize the chosen target either
+            // via this flow or directly.
+            demo.enter_attack_target_action()?;
+            Ok(json!({"status": "ok"}))
+        }
         "game.attack" => {
             let attacker = get_u32(params, "attacker")?;
             let target = get_u32(params, "target")?;
@@ -168,6 +176,17 @@ pub fn handle(demo: &mut TacticsDemo, method: &str, params: &Value) -> Result<Va
             // which calls `check_winner`. (Doing it here would force
             // every `setUnitHp` to also serialize the winner.)
             Ok(json!({"status": "ok", "hp": u.hp, "alive": u.alive}))
+        }
+        "game.setCursor" => {
+            let pos = get_pos(params)?;
+            if !demo.map.in_bounds(pos) {
+                return Err(format!("({},{}) out of bounds", pos.x, pos.y));
+            }
+            demo.cursor = pos;
+            // Lock out the next frame's mouse-snap so the cursor we just
+            // placed isn't immediately clobbered by a stationary pointer.
+            demo.last_mouse_px = None;
+            Ok(json!({"status": "ok", "x": pos.x, "y": pos.y}))
         }
         "game.setAiEnabled" => {
             let enabled = params

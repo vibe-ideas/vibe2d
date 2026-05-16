@@ -272,6 +272,151 @@ async fn screenshot_writes_png() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "spawns a real tactics-demo game window; run with --ignored"]
+async fn preview_combat_returns_expected_fields() {
+    // game.previewCombat must work without a phase precondition (it's
+    // read-only) and surface damage/hit + counter pair + double flags.
+    let mut h = GameHarness::launch(GAME_PACKAGE, VDP_PORT).await.unwrap();
+    h.pause().await.unwrap();
+    h.step_and_wait(1).await.unwrap();
+
+    let s = h.inspect().await.unwrap();
+    let attacker = faction_ids(&s, "player")[0];
+    let target = faction_ids(&s, "enemy")[0];
+
+    // Stage adjacency so a melee preview is meaningful (counter reachable).
+    let t = unit_by_id(&s, target);
+    let tx = t["x"].as_i64().unwrap();
+    let ty = t["y"].as_i64().unwrap();
+    let (ax, ay) = if tx > 0 { (tx - 1, ty) } else { (tx + 1, ty) };
+    h.call(
+        "game.setUnitPos",
+        json!({ "id": attacker, "x": ax, "y": ay }),
+    )
+    .await
+    .unwrap();
+
+    let resp = h
+        .call(
+            "game.previewCombat",
+            json!({ "attacker": attacker, "target": target }),
+        )
+        .await
+        .unwrap();
+    let result = resp.get("result").expect("vdp envelope must have result");
+    assert!(
+        result["damage"].as_i64().unwrap() >= 1,
+        "damage must hit floor of 1"
+    );
+    let hit = result["hit"].as_i64().unwrap();
+    assert!((0..=100).contains(&hit), "hit% must clamp to [0,100]");
+    // Both fields exist; counter pair is symmetrical (both Some or both None).
+    let cd = &result["counter_damage"];
+    let ch = &result["counter_hit"];
+    assert_eq!(
+        cd.is_null(),
+        ch.is_null(),
+        "counter_damage and counter_hit must agree on presence"
+    );
+    assert!(result["double_attack"].is_boolean());
+    assert!(result["counter_double"].is_boolean());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "spawns a real tactics-demo game window; run with --ignored"]
+async fn preview_combat_rejects_out_of_range_target() {
+    // The preview itself doesn't enforce range (it just reports counter
+    // = None), but it does require both unit ids to exist. Bad ids must
+    // surface as an error envelope.
+    let mut h = GameHarness::launch(GAME_PACKAGE, VDP_PORT).await.unwrap();
+    let resp = h
+        .call(
+            "game.previewCombat",
+            json!({ "attacker": 9999, "target": 1 }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        resp.get("error").is_some(),
+        "missing attacker must yield error envelope"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "spawns a real tactics-demo game window; run with --ignored"]
+async fn combat_preview_panel_renders_when_targeting() {
+    // End-to-end UI flow: select → move-in-place → enterAttackTarget →
+    // setCursor onto enemy → assert the `cp_*` widgets show up in
+    // ui.listWidgets so we know the preview panel actually rendered.
+    let mut h = GameHarness::launch(GAME_PACKAGE, VDP_PORT).await.unwrap();
+    h.pause().await.unwrap();
+    h.step_and_wait(1).await.unwrap();
+
+    let s = h.inspect().await.unwrap();
+    let attacker = faction_ids(&s, "player")[0];
+    let target = faction_ids(&s, "enemy")[0];
+    let t = unit_by_id(&s, target);
+    let tx = t["x"].as_i64().unwrap();
+    let ty = t["y"].as_i64().unwrap();
+    let (ax, ay) = if tx > 0 { (tx - 1, ty) } else { (tx + 1, ty) };
+
+    h.call(
+        "game.setUnitPos",
+        json!({ "id": attacker, "x": ax, "y": ay }),
+    )
+    .await
+    .unwrap();
+    h.call("game.selectUnit", json!({ "id": attacker }))
+        .await
+        .unwrap();
+    h.step_and_wait(1).await.unwrap();
+    // move-in-place: dest == current pos. Allowed because reachable
+    // always contains the unit's starting tile.
+    h.call("game.moveSelected", json!({ "x": ax, "y": ay }))
+        .await
+        .unwrap();
+    h.step_and_wait(1).await.unwrap();
+    h.call("game.enterAttackTarget", json!({})).await.unwrap();
+    h.call("game.setCursor", json!({ "x": tx, "y": ty }))
+        .await
+        .unwrap();
+    h.step_and_wait(1).await.unwrap();
+
+    let mid = h.inspect().await.unwrap();
+    assert_eq!(mid["phase"].as_str(), Some("player_attack_target"));
+    assert_eq!(
+        mid["cursor"][0].as_i64(),
+        Some(tx),
+        "cursor x must be on target"
+    );
+    assert_eq!(mid["cursor"][1].as_i64(), Some(ty));
+
+    // Preview widgets must be present.
+    for id in ["cp_header", "cp_attack", "cp_counter"] {
+        let w = h.find_widget(id).await.unwrap();
+        assert!(
+            w.is_some(),
+            "preview widget `{id}` must render in PlayerAttackTarget"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "spawns a real tactics-demo game window; run with --ignored"]
+async fn enter_attack_target_rejects_outside_player_action() {
+    // Brand-new game: phase is player_select, so calling enterAttackTarget
+    // must error rather than silently shuffling state.
+    let mut h = GameHarness::launch(GAME_PACKAGE, VDP_PORT).await.unwrap();
+    h.pause().await.unwrap();
+    h.step_and_wait(1).await.unwrap();
+    let resp = h.call("game.enterAttackTarget", json!({})).await.unwrap();
+    assert!(
+        resp.get("error").is_some(),
+        "enterAttackTarget outside PlayerAction must error"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "spawns a real tactics-demo game window; run with --ignored"]
 async fn unknown_method_returns_error() {
     let mut h = GameHarness::launch(GAME_PACKAGE, VDP_PORT).await.unwrap();
     let resp = h.call("game.somethingMadeUp", json!({})).await.unwrap();

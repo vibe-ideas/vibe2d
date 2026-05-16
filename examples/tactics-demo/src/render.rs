@@ -286,6 +286,36 @@ pub fn build_ui(demo: &mut TacticsDemo, ctx: &mut Context, input: &InputState) {
             }
         }
 
+        // Combat preview: while in PlayerAttackTarget with the cursor over
+        // an attackable enemy, show the projected fight outcome so the
+        // player isn't committing blind. Stable IDs prefixed `cp_` so VDP
+        // tests can assert the panel rendered.
+        if demo.phase == Phase::PlayerAttackTarget
+            && let PendingAction::ChoosingAttack { unit_id, .. } = demo.pending_action
+            && demo.attackable.contains(&demo.cursor)
+            && let Some(target) = demo.unit_at(demo.cursor)
+            && target.faction == Faction::Enemy
+            && let Ok(p) = demo.preview_combat(unit_id, target.id)
+        {
+            ui.set_cursor(HUD_X + 12.0, 250.0);
+            ui.set_spacing(2.0);
+            ui.label_with_id("cp_header", font, &format!("vs {}:", target.name));
+            let dmg_line = if p.double_attack {
+                format!("Dmg {}x2  Hit {}%", p.damage, p.hit)
+            } else {
+                format!("Dmg {}  Hit {}%", p.damage, p.hit)
+            };
+            ui.label_with_id("cp_attack", font, &dmg_line);
+            let counter_line = match (p.counter_damage, p.counter_hit) {
+                (Some(d), Some(h)) if p.counter_double => {
+                    format!("Counter {}x2  Hit {}%", d, h)
+                }
+                (Some(d), Some(h)) => format!("Counter {}  Hit {}%", d, h),
+                _ => "No counter".to_string(),
+            };
+            ui.label_with_id("cp_counter", font, &counter_line);
+        }
+
         // Combat log.
         ui.set_cursor(HUD_X + 12.0, 380.0);
         ui.set_spacing(2.0);

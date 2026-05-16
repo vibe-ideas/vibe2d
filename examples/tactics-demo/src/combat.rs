@@ -219,6 +219,72 @@ mod tests {
     }
 
     #[test]
+    fn preview_double_attack_when_speed_diff_meets_threshold() {
+        let map = Map::fixed_level();
+        let mut fast = unit(1, Faction::Player, GridPos::new(0, 4), 20, 5, 3);
+        fast.speed = 10;
+        let mut slow = unit(2, Faction::Enemy, GridPos::new(1, 4), 20, 5, 3);
+        slow.speed = 6; // diff exactly 4 — boundary
+        let p = preview(&map, &fast, &slow);
+        assert!(p.double_attack, "speed diff == 4 must double");
+
+        slow.speed = 7; // diff 3 — below threshold
+        let p2 = preview(&map, &fast, &slow);
+        assert!(!p2.double_attack, "speed diff < 4 must not double");
+    }
+
+    #[test]
+    fn preview_counter_double_when_defender_outspeeds_attacker() {
+        let map = Map::fixed_level();
+        let mut attacker = unit(1, Faction::Player, GridPos::new(0, 4), 20, 5, 3);
+        attacker.speed = 4;
+        let mut defender = unit(2, Faction::Enemy, GridPos::new(1, 4), 20, 5, 3);
+        defender.speed = 10; // counter has +6 advantage
+        let p = preview(&map, &attacker, &defender);
+        assert!(p.counter_damage.is_some(), "melee counter must reach");
+        assert!(p.counter_double, "fast defender double-counters");
+    }
+
+    #[test]
+    fn preview_counter_double_requires_counter_to_exist() {
+        // Defender is fast enough to qualify, but lacks the range to
+        // counter at all — counter_double must be false.
+        let map = Map::fixed_level();
+        let mut attacker = unit(1, Faction::Player, GridPos::new(0, 4), 20, 5, 3);
+        attacker.weapon.min_range = 2;
+        attacker.weapon.max_range = 2;
+        attacker.speed = 4;
+        let mut defender = unit(2, Faction::Enemy, GridPos::new(2, 4), 20, 5, 3);
+        defender.speed = 99;
+        let p = preview(&map, &attacker, &defender);
+        assert!(p.counter_damage.is_none());
+        assert!(!p.counter_double, "no counter, no double");
+    }
+
+    #[test]
+    fn preview_terrain_defense_reduces_damage() {
+        // Place defender on a forest tile (def +1) — damage should drop
+        // by 1 vs the same encounter on plain.
+        let map = Map::fixed_level();
+        let attacker = unit(1, Faction::Player, GridPos::new(0, 4), 20, 5, 0);
+        // (2, 1) is a forest tile in the fixed map.
+        let mut on_forest = unit(2, Faction::Enemy, GridPos::new(2, 1), 20, 5, 0);
+        on_forest.weapon.min_range = 1;
+        on_forest.weapon.max_range = 1;
+        // (3, 4) is plain.
+        let mut on_plain = on_forest.clone();
+        on_plain.pos = GridPos::new(3, 4);
+
+        let on_forest_dmg = preview(&map, &attacker, &on_forest).damage;
+        let on_plain_dmg = preview(&map, &attacker, &on_plain).damage;
+        assert_eq!(
+            on_forest_dmg + 1,
+            on_plain_dmg,
+            "forest must absorb 1 damage (def_bonus)"
+        );
+    }
+
+    #[test]
     fn resolve_counter_can_kill_attacker() {
         let map = Map::fixed_level();
         let mut attacker = unit(1, Faction::Player, GridPos::new(0, 4), 5, 1, 0);
