@@ -116,6 +116,10 @@ jobs:
           VIBE_TEST_RELEASE: "1"
           VIBE_TEST_FORCE_VISIBLE: "1"
           VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
+          # Honored by the harness (VIBE_TEST_CHILD_RUST_LOG override).
+          # Cranks winit X11 + wgpu logs to figure out why no window
+          # appears in xwininfo despite the game's main loop running.
+          VIBE_TEST_CHILD_RUST_LOG: "info,winit::platform_impl::linux::x11=trace,winit::window=trace,wgpu=debug,wgpu_hal=debug,wgpu_core=debug"
         run: |
           cargo test -p ${{ matrix.game.pkg }} --release \
             --test playthrough -- --ignored --nocapture
