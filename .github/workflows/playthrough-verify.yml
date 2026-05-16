@@ -35,11 +35,12 @@ jobs:
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      # Single entry while debugging the VDP-screenshot recorder.
-      # Once ui-demo's end-to-end pipeline produces a valid MP4 in
-      # the artifact, fan back out to all 5 demos.
       matrix:
         game:
+          - { pkg: aoi-demo }
+          - { pkg: flappy-bird }
+          - { pkg: mari0 }
+          - { pkg: tetris }
           - { pkg: ui-demo }
     steps:
       - uses: actions/checkout@v4
