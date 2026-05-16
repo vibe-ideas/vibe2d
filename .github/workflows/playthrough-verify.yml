@@ -116,11 +116,16 @@ jobs:
           VIBE_TEST_RELEASE: "1"
           VIBE_TEST_FORCE_VISIBLE: "1"
           VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
-          # Honored by the harness (VIBE_TEST_CHILD_RUST_LOG override).
-          # Cranks winit X11 + wgpu logs to figure out why no window
-          # appears in xwininfo despite the game's main loop running.
+          # See harness.rs — overrides child RUST_LOG (default is just
+          # "info") so we get winit/wgpu internals during debugging.
           VIBE_TEST_CHILD_RUST_LOG: "info,winit::platform_impl::linux::x11=trace,winit::window=trace,wgpu=debug,wgpu_hal=debug,wgpu_core=debug"
+          # Diagnostic: the ui-demo playthrough takes one
+          # game.screenshot at the very end when this env var is set.
+          # If the resulting PNG has real content but x11grab's GIF
+          # is still black, the bug is in the X11 display path.
+          VIBE_TEST_SCREENSHOT_DIR: /tmp/screenshots
         run: |
+          mkdir -p /tmp/screenshots
           cargo test -p ${{ matrix.game.pkg }} --release \
             --test playthrough -- --ignored --nocapture
 
@@ -161,5 +166,6 @@ jobs:
             /tmp/diag/
             /tmp/ffmpeg.log
             /tmp/fluxbox.log
+            /tmp/screenshots/
           retention-days: 7
           if-no-files-found: warn

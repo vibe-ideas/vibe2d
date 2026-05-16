@@ -14,6 +14,7 @@
 
 use std::time::Duration;
 
+use serde_json::json;
 use vibe_test::GameHarness;
 
 const GAME_PACKAGE: &str = "ui-demo";
@@ -72,4 +73,18 @@ async fn ui_demo_full_playthrough() {
     h.ui_scroll_to_bottom("msg_list").await.unwrap();
     beat().await;
     beat().await;
+
+    // Diagnostic: ask the game to dump a screenshot via VDP. If this
+    // file ends up uniformly black even when the X11 capture is also
+    // black, the bug is in wgpu/lavapipe itself. If it's vivid while
+    // x11grab gets black, the bug is in the X11 display path. Only
+    // fires when CI sets VIBE_TEST_SCREENSHOT_DIR (so local runs
+    // don't litter the workspace).
+    if let Ok(dir) = std::env::var("VIBE_TEST_SCREENSHOT_DIR") {
+        let _ = std::fs::create_dir_all(&dir);
+        let path = format!("{}/ui-demo.png", dir);
+        let _ = h.call_ok("game.screenshot", json!({ "path": path })).await;
+        // Give the engine a few frames to actually flush the readback.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
 }
