@@ -69,9 +69,27 @@ jobs:
           # Spawn the game child as `cargo run --release` — lavapipe is too
           # slow under debug to hit the harness' 180 s readiness timeout.
           VIBE_TEST_RELEASE: "1"
+          # Recording REQUIRES a mapped window or ffmpeg captures black.
+          # (Also: unmapped VIBE_HEADLESS windows break lavapipe surface init.)
+          VIBE_TEST_FORCE_VISIBLE: "1"
+          # Capture child stdout/stderr for postmortem if the scenario hangs.
+          VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
         run: |
           cargo test -p ui-demo --release \
             --test playthrough -- --ignored --nocapture
+      - name: Dump child game logs on failure
+        if: failure()
+        run: |
+          dir="${{ runner.temp }}/child-logs"
+          if [ -d "$dir" ]; then
+            for f in "$dir"/*.log; do
+              echo "::group::$(basename "$f")"
+              cat "$f"
+              echo "::endgroup::"
+            done
+          else
+            echo "No child log dir at $dir"
+          fi
 
       - name: Stop recorder + convert to GIF
         # Single-pass split palettegen → paletteuse. Quality is close to

@@ -146,10 +146,32 @@ jobs:
         env:
           WGPU_BACKEND: vulkan
           RUST_LOG: warn
+          # Spawn child games as `cargo run --release`; lavapipe is too
+          # slow under debug to hit the 180 s readiness timeout.
           VIBE_TEST_RELEASE: "1"
+          # Under Xvfb an unmapped (VIBE_HEADLESS) window breaks lavapipe
+          # surface init. Force visible — Xvfb is already a virtual display
+          # so "visible" only means "mapped in the X server", not on-screen.
+          VIBE_TEST_FORCE_VISIBLE: "1"
+          # Capture child stdout/stderr so a hung game leaves a panic /
+          # log trail behind, dumped by the post-step on failure below.
+          VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
         run: |
           xvfb-run -a cargo test -p ui-demo --release \
             -- --ignored --test-threads=1
+      - name: Dump child game logs on failure
+        if: failure()
+        run: |
+          dir="${{ runner.temp }}/child-logs"
+          if [ -d "$dir" ]; then
+            for f in "$dir"/*.log; do
+              echo "::group::$(basename "$f")"
+              cat "$f"
+              echo "::endgroup::"
+            done
+          else
+            echo "No child log dir at $dir"
+          fi
 
   # ── Release build without VDP ────────────────────────────────
   # Confirms the `--no-default-features` path (VDP stripped) still compiles.

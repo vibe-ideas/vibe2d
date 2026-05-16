@@ -2,6 +2,7 @@
 //! [`VdpClient`]. Plus its config struct [`LaunchOptions`] and the
 //! TCP/WS probe helpers used to wait for the child to become VDP-ready.
 
+use std::fs::File;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -54,7 +55,11 @@ impl<'a> LaunchOptions<'a> {
             port,
             ready_timeout: Duration::from_secs(180),
             target_dir: None,
-            visible: false,
+            // VIBE_TEST_FORCE_VISIBLE flips the default for CI under Xvfb,
+            // where an unmapped (VIBE_HEADLESS) window breaks lavapipe's
+            // surface init. Playthrough recording also needs the window
+            // mapped so ffmpeg has something to capture.
+            visible: env_flag("VIBE_TEST_FORCE_VISIBLE"),
             release: env_flag("VIBE_TEST_RELEASE"),
         }
     }
@@ -82,6 +87,26 @@ fn env_flag(name: &str) -> bool {
     }
 }
 
+/// Resolve the file path for a child's combined log, or `None` if
+/// `VIBE_TEST_CHILD_LOG_DIR` is unset (in which case the harness will
+/// default to null'd stdio, matching the original local-run behaviour).
+fn child_log_path(package: &str) -> Option<PathBuf> {
+    let dir = std::env::var_os("VIBE_TEST_CHILD_LOG_DIR")?;
+    let dir = PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join(format!("{}.log", package)))
+}
+
+/// Open the same log file twice (write + duplicate handle) so a child's
+/// stdout and stderr can both be routed to it without interleaving via
+/// pipes. Both handles are appended to, so re-spawns within one test
+/// session keep history rather than truncating.
+fn open_log_pair(path: &std::path::Path) -> std::io::Result<(Stdio, Stdio)> {
+    let f1 = File::options().create(true).append(true).open(path)?;
+    let f2 = f1.try_clone()?;
+    Ok((Stdio::from(f1), Stdio::from(f2)))
+}
+
 impl GameHarness {
     /// Launch a workspace package with default options and connect to its
     /// VDP port. The game is invoked via `cargo run -p <package>` so its
@@ -96,10 +121,22 @@ impl GameHarness {
         if opts.release {
             cmd.arg("--release");
         }
-        cmd.args(["-p", opts.package])
-            .env("RUST_LOG", "warn")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        cmd.args(["-p", opts.package]).env("RUST_LOG", "warn");
+
+        // VIBE_TEST_CHILD_LOG_DIR=/some/dir routes child stdout/stderr to
+        // `<dir>/<package>.log`. Used in CI so a hung child still leaves
+        // a panic/log trail behind for postmortem. Defaults to null'd
+        // stdio so local runs don't drown the test report.
+        if let Some(log_path) = child_log_path(opts.package) {
+            let (out, err) = open_log_pair(&log_path)
+                .with_context(|| format!("open child log {}", log_path.display()))?;
+            cmd.stdout(out).stderr(err);
+            // Crank child logging up to info so the file is actually useful.
+            cmd.env("RUST_LOG", "info");
+        } else {
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+
         if let Some(dir) = &opts.target_dir {
             cmd.env("CARGO_TARGET_DIR", dir);
         }
