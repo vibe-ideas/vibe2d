@@ -656,8 +656,7 @@ impl Game for TacticsDemo {
                 | Phase::PlayerAction
                 | Phase::PlayerAttackTarget
         ) {
-            let (cursor, mouse_px, cmd) =
-                collect_command(input, self.cursor, self.last_mouse_px);
+            let (cursor, mouse_px, cmd) = collect_command(input, self.cursor, self.last_mouse_px);
             self.cursor = cursor;
             self.last_mouse_px = mouse_px;
             if let Some(cmd) = cmd {
