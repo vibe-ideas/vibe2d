@@ -24,6 +24,10 @@ async fn flappy_bird_playthrough() {
         .await
         .expect("launch flappy-bird");
 
+    // CI sets VIBE_TEST_RECORDING_DIR — see `examples/ui/tests/playthrough.rs`
+    // for the why (x11grab on Xvfb captures black; VDP screenshots don't).
+    let _recorder = h.start_recorder(GAME_PACKAGE, 15).await.ok().flatten();
+
     // Initial pause so the title / first frame is visible in the GIF.
     tokio::time::sleep(Duration::from_millis(800)).await;
 

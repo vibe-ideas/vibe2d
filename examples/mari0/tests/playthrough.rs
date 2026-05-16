@@ -27,6 +27,10 @@ async fn mari0_playthrough() {
         .await
         .expect("launch mari0");
 
+    // CI sets VIBE_TEST_RECORDING_DIR — see `examples/ui/tests/playthrough.rs`
+    // for the why (x11grab on Xvfb captures black; VDP screenshots don't).
+    let _recorder = h.start_recorder(GAME_PACKAGE, 15).await.ok().flatten();
+
     // Show the title for a beat.
     sleep(800).await;
 

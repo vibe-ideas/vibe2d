@@ -1,23 +1,16 @@
 name: Playthrough Verify (sandbox)
 
 # Temporary sibling of `playthrough.yml`, kept around only while
-# iterating on the recording recipe (Xvfb + WM + Vulkan + ffmpeg).
+# iterating on the recording recipe. Triggers on `push` so changes
+# to the recording recipe take effect immediately (unlike
+# `pull_request_target` which reads YAML from the default branch).
 #
-# Why a separate workflow:
-#   * `playthrough.yml` triggers via `pull_request_target` and that
-#     event reads its YAML from the default branch — so any fix to
-#     the recording recipe in a PR can't take effect on the PR's
-#     own run, only after merge. Painful to iterate.
-#   * This workflow triggers on `push` and `workflow_dispatch`, so
-#     it always runs the YAML and code from the pushed branch. The
-#     PR's own pushes verify the fix immediately.
-#
-# Compared to playthrough.yml: no publish job, no orphan-branch
-# checkout, no PR comment. GIFs land in the run's artifacts and the
-# author downloads them to verify by eye.
-#
-# Once `playthrough.yml`'s recipe is known-good, delete this file
-# in the same PR that promotes the recipe to main.
+# Recording approach: bypass x11grab entirely. wgpu/lavapipe under
+# Xvfb renders correctly but the X11 display path comes out black —
+# proven by VDP game.screenshot returning YAVG=102 (normal bright
+# content) while x11grab on the same display gives YAVG=16 (Xvfb
+# default gray). So we use VDP's wgpu-readback screenshot path as
+# the recorder and assemble the PNGs with ffmpeg afterwards.
 
 on:
   push:
@@ -39,12 +32,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # No `width`/`height` here anymore — the VDP screenshot path
+        # uses the game's actual swapchain size, so ffmpeg picks it
+        # up from the PNG headers automatically.
         game:
-          - { pkg: aoi-demo, width: 1440, height: 576 }
-          - { pkg: flappy-bird, width: 1280, height: 720 }
-          - { pkg: mari0, width: 1280, height: 960 }
-          - { pkg: tetris, width: 800, height: 700 }
-          - { pkg: ui-demo, width: 1024, height: 640 }
+          - { pkg: aoi-demo }
+          - { pkg: flappy-bird }
+          - { pkg: mari0 }
+          - { pkg: tetris }
+          - { pkg: ui-demo }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -52,10 +48,11 @@ jobs:
         with:
           key: playthrough-verify-${{ matrix.game.pkg }}
 
-      - name: Install audio + display + Vulkan + recording deps
-        # x11-apps gives us xeyes as a control X11 client — if even
-        # xeyes doesn't appear in screenshots then the X11 capture
-        # itself is broken (vs the game-side rendering being broken).
+      - name: Install audio + display + Vulkan + assembly deps
+        # Xvfb still required because winit's X11 backend needs an X
+        # connection to start. But no fluxbox/x11-utils/imagemagick —
+        # we don't depend on the X11 display path for capture
+        # anymore. ffmpeg is just the GIF assembler from PNGs.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -64,68 +61,31 @@ jobs:
             xvfb \
             mesa-vulkan-drivers \
             vulkan-tools \
-            ffmpeg \
-            fluxbox \
-            x11-utils \
-            x11-apps \
-            imagemagick
+            ffmpeg
 
-      - name: Start Xvfb + fluxbox + ffmpeg recorder
-        env:
-          W: ${{ matrix.game.width }}
-          H: ${{ matrix.game.height }}
+      - name: Start Xvfb
         run: |
-          Xvfb :99 -screen 0 "${W}x${H}x24" \
+          # Generous screen so different games' window sizes all fit
+          # if winit ever decides to position the window non-trivially.
+          Xvfb :99 -screen 0 1440x960x24 \
             +extension RANDR +extension GLX +extension COMPOSITE \
             -noreset -ac &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
           sleep 1
 
-          DISPLAY=:99 fluxbox -display :99 \
-            > /tmp/fluxbox.log 2>&1 &
-          sleep 1
-
-          # Control X11 app: if xeyes appears in the screenshot but
-          # the game window doesn't, the bug is in winit/wgpu Vulkan
-          # WSI, not X11 capture. Geometry placed off-center so we
-          # can tell it apart from any game-window debris at (0,0).
-          DISPLAY=:99 xeyes -geometry 200x150+50+50 \
-            > /tmp/xeyes.log 2>&1 &
-
-          mkdir -p /tmp/diag
-          for delay in 4 8 12; do
-            (
-              sleep "$delay"
-              DISPLAY=:99 xwininfo -root -tree \
-                > "/tmp/diag/xwininfo-${delay}s.txt" 2>&1 || true
-              DISPLAY=:99 import -window root \
-                "/tmp/diag/screen-${delay}s.png" 2>/dev/null || true
-            ) &
-          done
-
-          ffmpeg -y -f x11grab -video_size "${W}x${H}" -framerate 30 \
-            -i :99 -c:v libx264 -pix_fmt yuv420p \
-            /tmp/play.mp4 \
-            > /tmp/ffmpeg.log 2>&1 &
-          echo $! > /tmp/ffmpeg.pid
-
-      - name: Run playthrough scenario
+      - name: Run playthrough scenario (with VDP-screenshot recorder)
         env:
           WGPU_BACKEND: vulkan
           RUST_LOG: warn
           VIBE_TEST_RELEASE: "1"
           VIBE_TEST_FORCE_VISIBLE: "1"
           VIBE_TEST_CHILD_LOG_DIR: ${{ runner.temp }}/child-logs
-          # See harness.rs — overrides child RUST_LOG (default is just
-          # "info") so we get winit/wgpu internals during debugging.
-          VIBE_TEST_CHILD_RUST_LOG: "info,winit::platform_impl::linux::x11=trace,winit::window=trace,wgpu=debug,wgpu_hal=debug,wgpu_core=debug"
-          # Diagnostic: the ui-demo playthrough takes one
-          # game.screenshot at the very end when this env var is set.
-          # If the resulting PNG has real content but x11grab's GIF
-          # is still black, the bug is in the X11 display path.
-          VIBE_TEST_SCREENSHOT_DIR: /tmp/screenshots
+          # The harness picks this up in `start_recorder(...)` and
+          # spawns a background task that polls game.screenshot at
+          # 15 fps writing PNGs to ${VIBE_TEST_RECORDING_DIR}/<pkg>/.
+          VIBE_TEST_RECORDING_DIR: /tmp/recording
         run: |
-          mkdir -p /tmp/screenshots
+          mkdir -p /tmp/recording
           cargo test -p ${{ matrix.game.pkg }} --release \
             --test playthrough -- --ignored --nocapture
 
@@ -133,28 +93,27 @@ jobs:
         if: always()
         run: |
           dir="${{ runner.temp }}/child-logs"
-          mkdir -p /tmp/diag/child-logs
+          mkdir -p /tmp/diag
           if [ -d "$dir" ]; then
-            cp "$dir"/*.log /tmp/diag/child-logs/ 2>/dev/null || true
-            for f in "$dir"/*.log; do
-              echo "::group::$(basename "$f")"
-              cat "$f"
-              echo "::endgroup::"
-            done
-          else
-            echo "No child log dir at $dir"
+            cp "$dir"/*.log /tmp/diag/ 2>/dev/null || true
           fi
 
-      - name: Stop recorder + convert to GIF
+      - name: Assemble PNGs into GIF
         if: always()
+        env:
+          PKG: ${{ matrix.game.pkg }}
         run: |
-          kill -INT "$(cat /tmp/ffmpeg.pid)" || true
-          sleep 2
-          if [ -f /tmp/play.mp4 ]; then
-            ffmpeg -y -i /tmp/play.mp4 \
-              -vf "fps=15,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
-              /tmp/play.gif
+          dir="/tmp/recording/${PKG}"
+          if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+            echo "No PNGs in $dir — skipping GIF assembly."
+            exit 0
           fi
+          # Match the recorder's 15 fps so playback timing matches reality.
+          # palettegen/paletteuse for decent color count.
+          ffmpeg -y -framerate 15 -i "$dir/%04d.png" \
+            -vf "scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+            /tmp/play.gif
+          ls -la /tmp/play.gif
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -162,10 +121,7 @@ jobs:
           name: verify-${{ matrix.game.pkg }}
           path: |
             /tmp/play.gif
-            /tmp/play.mp4
+            /tmp/recording/${{ matrix.game.pkg }}/
             /tmp/diag/
-            /tmp/ffmpeg.log
-            /tmp/fluxbox.log
-            /tmp/screenshots/
           retention-days: 7
           if-no-files-found: warn

@@ -36,6 +36,8 @@
 
 mod client;
 mod harness;
+mod recorder;
 
 pub use client::VdpClient;
 pub use harness::{GameHarness, LaunchOptions};
+pub use recorder::Recorder;

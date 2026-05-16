@@ -170,6 +170,22 @@ impl GameHarness {
     }
 }
 
+impl GameHarness {
+    /// Spawn a background [`Recorder`](crate::Recorder) that polls
+    /// `game.screenshot` at `fps` and writes PNGs into
+    /// `${VIBE_TEST_RECORDING_DIR}/${label}/####.png`. Returns
+    /// `Ok(None)` when the env var is unset (local runs); the test
+    /// can `let _ = ...;` the result and keep going.
+    pub async fn start_recorder(
+        &self,
+        label: &str,
+        fps: u32,
+    ) -> Result<Option<crate::recorder::Recorder>> {
+        let addr: SocketAddr = ([127, 0, 0, 1], self.port).into();
+        crate::recorder::Recorder::start(addr, label, fps).await
+    }
+}
+
 impl std::ops::Deref for GameHarness {
     type Target = VdpClient;
     fn deref(&self) -> &Self::Target {

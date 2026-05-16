@@ -29,6 +29,10 @@ async fn aoi_demo_playthrough() {
         .await
         .expect("launch aoi-demo");
 
+    // CI sets VIBE_TEST_RECORDING_DIR — see `examples/ui/tests/playthrough.rs`
+    // for the why (x11grab on Xvfb captures black; VDP screenshots don't).
+    let _recorder = h.start_recorder(GAME_PACKAGE, 15).await.ok().flatten();
+
     // Let the observers free-roam and show off the lit-set lighting.
     for _ in 0..6 {
         beat().await;
