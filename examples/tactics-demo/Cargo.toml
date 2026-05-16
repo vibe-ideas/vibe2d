@@ -1,0 +1,23 @@
+[package]
+name = "tactics-demo"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["vdp"]
+vdp = ["vibe2d/vdp", "dep:serde_json"]
+
+[dependencies]
+vibe2d = { workspace = true }
+serde_json = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+
+[dev-dependencies]
+vibe_test = { workspace = true, features = ["vdp"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+anyhow.workspace = true
+serde_json.workspace = true
