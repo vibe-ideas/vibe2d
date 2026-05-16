@@ -298,12 +298,60 @@ Vibe2D 分两层：
 3. 在 `examples/<game>/tests/<name>.rs` 中写 `#[tokio::test(flavor = "multi_thread")] #[ignore]` 测试，用 `vibe_test::GameHarness::launch("<game>", <port>)` 启动进程并拿到一个带 VDP 客户端的 harness。
 4. 运行：`cargo test -p <game> -- --ignored --test-threads=1`（必须串行，因为 harness 占用固定 VDP 端口）。
 
-参考样例见 `examples/ui/tests/vdp_ui.rs`。
+参考样例：
+
+- 断言型：`examples/ui/tests/vdp_ui.rs`、`examples/aoi-demo/tests/vdp_aoi.rs`
+- 无断言（CI GIF 录制人速场景）：`examples/<game>/tests/playthrough.rs` 每个 demo 都有一个，全部走同一套 `GameHarness::launch` + `simulate_key_*` / `ui_*` + `tokio::time::sleep` 节奏
+
+**VDP 按键命名**（坑过几次了）：`engine.simulateInput` 的 `key` 参数用**短**形式 —— `"L"`、`"Left" / "Right" / "Up" / "Down"`、`"Space"`、`"Enter"`、`"ShiftLeft"` ——**不**是 winit 的长形式（`"KeyL"`、`"ArrowLeft"` 等），传错会被服务端 `Unknown key: <name>` 拒绝。权威别名表在 [`crates/vibe_input/src/lib.rs:303`](crates/vibe_input/src/lib.rs#L303) `string_to_keycode()`。`game.yaml` 的 `input.actions.*.keys` 用的是同一套，可以直接照抄。
+
+**Headless 运行**（默认开启）：
+
+`GameHarness::launch` 默认给子进程设置 `VIBE_HEADLESS=1`，桌面平台会以 `with_visible(false)` 创建窗口。本地 `--ignored` 不再抢焦点。要看真窗口（人工 debug）：
+
+```rust
+use vibe_test::{GameHarness, LaunchOptions};
+let opts = LaunchOptions::new("ui-demo", 9230).visible(true);
+let mut h = GameHarness::launch_with(opts).await.unwrap();
+```
+
+**Harness 环境变量**（CI / 调试用）：
+
+| Env | 作用 |
+| --- | --- |
+| `VIBE_HEADLESS=1` | 子进程自动设；隐藏窗口（macOS Quartz 友好）。**Xvfb 下要关掉**（unmapped 窗口会让 lavapipe surface init 挂掉） |
+| `VIBE_TEST_FORCE_VISIBLE=1` | 让 `LaunchOptions::new` 默认 `visible=true`，CI/Xvfb/录制场景必须开 |
+| `VIBE_TEST_RELEASE=1` | 子进程改用 `cargo run --release`。软件 Vulkan（lavapipe）debug 跑不动 180s readiness 超时 |
+| `VIBE_TEST_CHILD_LOG_DIR=<dir>` | 子进程 stdout/stderr 写到 `<dir>/<package>.log` + `RUST_LOG=info`。不设时是 `Stdio::null()`，CI 失败排查必备 |
+
+**CI 集成**（`.github/workflows/ci.yml` → job `vdp-integration`）：
+
+`ubuntu-latest` 上跑 `xvfb-run cargo test -p ui-demo --release -- --ignored`，环境是 Xvfb + lavapipe（软件 Vulkan）+ 上面四个 env。失败时一个 post-step 把 `${runner.temp}/child-logs/*.log` 通过 `::group::` 折叠 dump 出来。
+
+**PR Playthrough GIF**（`.github/workflows/playthrough.yml`）：
+
+单 workflow + `pull_request_target`，按 job 隔离权限：
+
+- `record` — matrix 跑全部 5 个 demo（aoi-demo / flappy-bird / mari0 / tetris / ui-demo），各自的 `examples/<game>/tests/playthrough.rs` + ffmpeg 录屏。`contents: read`，1 个 demo 挂不影响其他 4 个（`fail-fast: false`）
+- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，下载所有 artifact + push 5 个 GIF 到 orphan 分支 `playthrough-assets` + **一条**评论里 inline 全部 5 张图
+- `cleanup` — `contents: write`，PR closed 时删该 PR 的所有 GIF（glob `pr-${PR}-*.gif`）
+
+**新增 demo 时**：在 `examples/<game>/tests/playthrough.rs` 写无断言的人速场景（不要 `pause()`），在 `playthrough.yml` 的 `matrix.game` 列表里加一条 `{ pkg, width, height }`（窗口尺寸取自 `game.yaml` 的 `window:` 节，传给 ffmpeg 的 x11grab 用）。
+
+**一次性 setup**（首次启用前）：
+
+```bash
+git checkout --orphan playthrough-assets
+git rm -rf .
+git commit --allow-empty -m 'init: playthrough assets branch'
+git push -u origin playthrough-assets
+```
 
 **注意事项**：
 - `vibe_test` 是 **dev-dependency** —— `cargo build --release` **不会**把它编译进发布产物。
-- `#[ignore]` 是刻意的——集成测试会冷启动 `cargo run -p <game>`，耗时长，不适合放在默认 `cargo test` 管线里。
+- `#[ignore]` 是刻意的——集成测试会冷启动 `cargo run -p <game>`，耗时长，不适合放在默认 `cargo test` 管线里。CI 的 `vdp-integration` job 显式带 `--ignored` 跑这些。
 - `GameHarness::step_and_wait(n)` 要优先于裸 `step(n)` —— `engine.step` 是非阻塞的，不等就发下一条 RPC 容易产生时序 race。
+- Playthrough 场景**不能** `pause()`——录制需要正常 running 的帧。VDP 动作之间用 `tokio::time::sleep` 模拟人速。
 - Python 脚本（`examples/*/tests/*.py`）定位不同：Rust 测试是 **CI 门禁**（硬断言 + 退出码），Python 是 **交互探索 / LLM autopilot 演示**。两者互补，不要互相替代。
 
 ## 代码风格
