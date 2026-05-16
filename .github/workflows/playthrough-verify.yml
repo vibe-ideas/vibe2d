@@ -53,6 +53,9 @@ jobs:
           key: playthrough-verify-${{ matrix.game.pkg }}
 
       - name: Install audio + display + Vulkan + recording deps
+        # x11-apps gives us xeyes as a control X11 client — if even
+        # xeyes doesn't appear in screenshots then the X11 capture
+        # itself is broken (vs the game-side rendering being broken).
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -64,6 +67,7 @@ jobs:
             ffmpeg \
             fluxbox \
             x11-utils \
+            x11-apps \
             imagemagick
 
       - name: Start Xvfb + fluxbox + ffmpeg recorder
@@ -80,6 +84,13 @@ jobs:
           DISPLAY=:99 fluxbox -display :99 \
             > /tmp/fluxbox.log 2>&1 &
           sleep 1
+
+          # Control X11 app: if xeyes appears in the screenshot but
+          # the game window doesn't, the bug is in winit/wgpu Vulkan
+          # WSI, not X11 capture. Geometry placed off-center so we
+          # can tell it apart from any game-window debris at (0,0).
+          DISPLAY=:99 xeyes -geometry 200x150+50+50 \
+            > /tmp/xeyes.log 2>&1 &
 
           mkdir -p /tmp/diag
           for delay in 4 8 12; do
@@ -109,11 +120,13 @@ jobs:
           cargo test -p ${{ matrix.game.pkg }} --release \
             --test playthrough -- --ignored --nocapture
 
-      - name: Dump child game logs on failure
-        if: failure()
+      - name: Collect child game logs (always)
+        if: always()
         run: |
           dir="${{ runner.temp }}/child-logs"
+          mkdir -p /tmp/diag/child-logs
           if [ -d "$dir" ]; then
+            cp "$dir"/*.log /tmp/diag/child-logs/ 2>/dev/null || true
             for f in "$dir"/*.log; do
               echo "::group::$(basename "$f")"
               cat "$f"
