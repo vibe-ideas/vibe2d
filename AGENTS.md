@@ -328,15 +328,19 @@ let mut h = GameHarness::launch_with(opts).await.unwrap();
 
 `ubuntu-latest` 上跑 `xvfb-run cargo test -p ui-demo --release -- --ignored`，环境是 Xvfb + lavapipe（软件 Vulkan）+ 上面四个 env。失败时一个 post-step 把 `${runner.temp}/child-logs/*.log` 通过 `::group::` 折叠 dump 出来。
 
-**PR Playthrough GIF**（`.github/workflows/playthrough.yml`）：
+**PR Playthrough MP4**（`.github/workflows/playthrough.yml`）：
 
 单 workflow + `pull_request_target`，按 job 隔离权限：
 
-- `record` — matrix 跑全部 5 个 demo（aoi-demo / flappy-bird / mari0 / tetris / ui-demo），各自的 `examples/<game>/tests/playthrough.rs` + ffmpeg 录屏。`contents: read`，1 个 demo 挂不影响其他 4 个（`fail-fast: false`）
-- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，下载所有 artifact + push 5 个 GIF 到 orphan 分支 `playthrough-assets` + **一条**评论里 inline 全部 5 张图
-- `cleanup` — `contents: write`，PR closed 时删该 PR 的所有 GIF（glob `pr-${PR}-*.gif`）
+- `record` — matrix 跑全部 5 个 demo（aoi-demo / flappy-bird / mari0 / tetris / ui-demo），各自的 `examples/<game>/tests/playthrough.rs` 用 `ScreenshotPacer` 通过 VDP `game.screenshot` 在游戏自身 wgpu 输出上做 readback 抓 15fps PNG 序列，跑完 ffmpeg 拼成 MP4。`contents: read`，1 个 demo 挂不影响其他 4 个（`fail-fast: false`）。timeout-minutes: 15
+- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，下载所有 artifact + push 5 个 MP4 到 orphan 分支 `playthrough-assets` + **一条**评论里 inline 全部 5 个 `<video>` 播放器
+- `cleanup` — `contents: write`，PR closed 时删该 PR 的所有 MP4（glob `pr-${PR}-*.mp4`，兼容旧 `.gif`）
 
-**新增 demo 时**：在 `examples/<game>/tests/playthrough.rs` 写无断言的人速场景（不要 `pause()`），在 `playthrough.yml` 的 `matrix.game` 列表里加一条 `{ pkg, width, height }`（窗口尺寸取自 `game.yaml` 的 `window:` 节，传给 ffmpeg 的 x11grab 用）。
+**为什么不用 x11grab**：早期尝试过 Xvfb + ffmpeg x11grab，但 wgpu/lavapipe 的 Vulkan WSI 在 Xvfb 下渲染正常但不 present 到 X11 drawable，x11grab 抓到全黑。VDP screenshot 直接走 wgpu texture readback，绕过整个 X11 display path，YAVG 实测从 16（Xvfb 默认灰）跳到 100+（真实内容）。完整复盘见 `docs/plans/headless_tests.md` 末尾的实施记录。
+
+**为什么 ScreenshotPacer 不是后台任务**：因为 `crates/vibe_debug/src/server.rs:42` 的 VDP server 一次只接受一个 WS client（accept-then-handle 串行），后台 recorder 想开第二个连接会卡死在 `connect()`。ScreenshotPacer 同步用 harness 已有的连接，`pacer.sleep(&mut h, dur)` 替代裸 `tokio::time::sleep`，里面交错截图。
+
+**新增 demo 时**：在 `examples/<game>/tests/playthrough.rs` 写无断言的人速场景（不要 `pause()`），`let mut pacer = ScreenshotPacer::new(GAME_PACKAGE, 15);` + 所有 sleep 改成 `pacer.sleep(&mut h, dur).await`。在 `playthrough.yml` 的 `matrix.game` 列表里加一条 `{ pkg }`（不再需要 width/height，PNG header 自带）。
 
 **一次性 setup**（首次启用前）：
 

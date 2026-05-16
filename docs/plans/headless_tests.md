@@ -532,4 +532,29 @@ Step 4 原计划只录 1 个 demo，后来扩到全部 5 个：
 
 2. Settings → Actions → Workflow permissions 允许 write contents + PR 评论。
 
-完成后第一个改 `crates/vibe_render|vibe_ui|vibe_platform|vibe_test/**` 或 `examples/**` 的 PR 会自动收到 inline GIF 评论。
+完成后第一个改 `crates/vibe_render|vibe_ui|vibe_platform|vibe_test/**` 或 `examples/**` 的 PR 会自动收到 inline 视频评论。
+
+### Recording 黑屏复盘（PR #5，2026-05-16）
+
+合并后 PR #3 自动触发 playthrough，5 张 GIF 全是 YAVG≈16/255 的纯黑。下载 artifact 抽帧测亮度才发现 — 之前每次 CI「成功」也都是黑的，没人打开看过。
+
+**根因**：x11grab 抓 Xvfb 的 root drawable 拿不到 wgpu/lavapipe 的 present 输出。试过加 fluxbox + Xvfb 扩展（RANDR/GLX/COMPOSITE），加 xeyes 对照 — xeyes 截图能看见，游戏窗口在 xwininfo 里**根本不存在**（116 个 X11 children，最大的也才 1022x20 的 fluxbox toolbar），但 wgpu 还在正常 render。
+
+**诊断 smoking gun**：让 ui-demo playthrough 在录制末尾调一次 `engine.screenshot` 让 wgpu 自己 readback PNG，结果 YAVG=102 — wgpu 渲染完全没问题，**X11 display path 才是断的**。
+
+**真正修复**：放弃 x11grab。改用 wgpu texture readback 当 recorder。
+
+- 新增 `ScreenshotPacer`（`crates/vibe_test/src/recorder.rs`）：同步 helper，`pacer.sleep(&mut h, dur)` 替代裸 `tokio::time::sleep`，每个 frame_interval 走 VDP `game.screenshot` 抓一张 PNG。
+- CI workflow：删除 x11grab + fluxbox + Xvfb 扩展折腾，只留 Xvfb（winit 启动要 X display）。test 跑完，ffmpeg 把 PNG 序列拼成 MP4。
+- 输出从 GIF 改 MP4：MP4 走 GitHub `<video>` tag 有播放控件，文件比 GIF 小 5-10×。
+- 文件命名 `pr-${PR}-${SHA}-${pkg}.mp4`，cleanup glob 兼容 `.mp4` + 旧 `.gif`。
+
+**为什么 ScreenshotPacer 不是后台任务**：first attempt 是个跑后台 tokio 任务的 `Recorder`，自己开第二个 VdpClient 连接。本地跑 hang 60s，CI 跑 hang 66 分钟 × 5 个 runner。挖出来 `crates/vibe_debug/src/server.rs:42` 注释清清楚楚 "Accept one connection at a time (simple model for AI tool)" — VDP server 单 client 串行 accept，第二个连接卡在内核 accept queue 里永远收不到。多 client 改造是大手术（要重设计 per-client 响应路由），先放着；ScreenshotPacer 同步在 harness 已有的连接上交错，干净避坑。
+
+**新踩的小坑**：
+
+- ffmpeg `libx264` 不接受奇数维度，scale 时要 `trunc(iw/2)*2:trunc(ih/2)*2`
+- artifact 文件大小 `ls -la` 输出在 macOS 上日期列是 "May" 不是 bytes，要 `stat -f '%z'` 看真实字节数
+- CI debugging 砸了不少 GitHub Actions 计费，下次类似拿不准的 verify 流程，先缩到单 example + `timeout-minutes` 上限再 push
+
+详细 fix PR：vibe-ideas/vibe2d#5（待评审）。
