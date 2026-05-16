@@ -298,12 +298,53 @@ Vibe2D 分两层：
 3. 在 `examples/<game>/tests/<name>.rs` 中写 `#[tokio::test(flavor = "multi_thread")] #[ignore]` 测试，用 `vibe_test::GameHarness::launch("<game>", <port>)` 启动进程并拿到一个带 VDP 客户端的 harness。
 4. 运行：`cargo test -p <game> -- --ignored --test-threads=1`（必须串行，因为 harness 占用固定 VDP 端口）。
 
-参考样例见 `examples/ui/tests/vdp_ui.rs`。
+参考样例见 `examples/ui/tests/vdp_ui.rs`（断言型）和 `examples/ui/tests/playthrough.rs`（无断言、用于 CI GIF 录制的人速场景）。
+
+**Headless 运行**（默认开启）：
+
+`GameHarness::launch` 默认给子进程设置 `VIBE_HEADLESS=1`，桌面平台会以 `with_visible(false)` 创建窗口。本地 `--ignored` 不再抢焦点。要看真窗口（人工 debug）：
+
+```rust
+use vibe_test::{GameHarness, LaunchOptions};
+let opts = LaunchOptions::new("ui-demo", 9230).visible(true);
+let mut h = GameHarness::launch_with(opts).await.unwrap();
+```
+
+**Harness 环境变量**（CI / 调试用）：
+
+| Env | 作用 |
+| --- | --- |
+| `VIBE_HEADLESS=1` | 子进程自动设；隐藏窗口（macOS Quartz 友好）。**Xvfb 下要关掉**（unmapped 窗口会让 lavapipe surface init 挂掉） |
+| `VIBE_TEST_FORCE_VISIBLE=1` | 让 `LaunchOptions::new` 默认 `visible=true`，CI/Xvfb/录制场景必须开 |
+| `VIBE_TEST_RELEASE=1` | 子进程改用 `cargo run --release`。软件 Vulkan（lavapipe）debug 跑不动 180s readiness 超时 |
+| `VIBE_TEST_CHILD_LOG_DIR=<dir>` | 子进程 stdout/stderr 写到 `<dir>/<package>.log` + `RUST_LOG=info`。不设时是 `Stdio::null()`，CI 失败排查必备 |
+
+**CI 集成**（`.github/workflows/ci.yml` → job `vdp-integration`）：
+
+`ubuntu-latest` 上跑 `xvfb-run cargo test -p ui-demo --release -- --ignored`，环境是 Xvfb + lavapipe（软件 Vulkan）+ 上面四个 env。失败时一个 post-step 把 `${runner.temp}/child-logs/*.log` 通过 `::group::` 折叠 dump 出来。
+
+**PR Playthrough GIF**（`.github/workflows/playthrough.yml`）：
+
+单 workflow + `pull_request_target`，按 job 隔离权限：
+
+- `record` — `contents: read`，跑 `examples/ui/tests/playthrough.rs`、ffmpeg 录屏、传 artifact
+- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，只下载 artifact + push GIF 到 orphan 分支 `playthrough-assets` + 给 PR 贴 inline 评论
+- `cleanup` — `contents: write`，PR closed 时删对应 GIF
+
+**一次性 setup**（首次启用前）：
+
+```bash
+git checkout --orphan playthrough-assets
+git rm -rf .
+git commit --allow-empty -m 'init: playthrough assets branch'
+git push -u origin playthrough-assets
+```
 
 **注意事项**：
 - `vibe_test` 是 **dev-dependency** —— `cargo build --release` **不会**把它编译进发布产物。
-- `#[ignore]` 是刻意的——集成测试会冷启动 `cargo run -p <game>`，耗时长，不适合放在默认 `cargo test` 管线里。
+- `#[ignore]` 是刻意的——集成测试会冷启动 `cargo run -p <game>`，耗时长，不适合放在默认 `cargo test` 管线里。CI 的 `vdp-integration` job 显式带 `--ignored` 跑这些。
 - `GameHarness::step_and_wait(n)` 要优先于裸 `step(n)` —— `engine.step` 是非阻塞的，不等就发下一条 RPC 容易产生时序 race。
+- Playthrough 场景**不能** `pause()`——录制需要正常 running 的帧。VDP 动作之间用 `tokio::time::sleep` 模拟人速。
 - Python 脚本（`examples/*/tests/*.py`）定位不同：Rust 测试是 **CI 门禁**（硬断言 + 退出码），Python 是 **交互探索 / LLM autopilot 演示**。两者互补，不要互相替代。
 
 ## 代码风格

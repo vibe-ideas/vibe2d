@@ -1,6 +1,6 @@
 # 测试 headless 化方案
 
-> 状态：待评审 · 作者：Claude Opus 4.7 协助 · 2026-05-16
+> 状态：✅ 已实施（PR #4，2026-05-16）· 实际偏离与坑见文末「实施记录」 · 作者：Claude Opus 4.7 协助
 
 ## 背景
 
@@ -480,3 +480,44 @@ D 完成后：
 
 所有 7 个开放问题已决，可以开工。
 
+---
+
+## 实施记录（2026-05-16，PR #4）
+
+### 实际偏离
+
+- **目标 example 改成 `ui-demo`**：规划中的 `tactics-demo` 在当时仓库不存在（仅 aoi-demo / flappy-bird / mari0 / tetris / ui）。CI gate（Step 3）和 playthrough（Step 4）全部绑到 ui-demo。
+- **Step 6 跳过**：`docs/engine_quirks.md` 不存在，本期不新建。
+- **D 方案从 3 workflow 合成 1 个**：原设计 `playthrough-record.yml`（pull_request 触发，read-only）+ `playthrough-publish.yml`（workflow_run 触发，write 权限）撞上 GitHub 平台硬规则——`workflow_run` 仅承认默认分支上的 workflow 文件。publish workflow 死活注册不上。最终改成单 `.github/workflows/playthrough.yml` + `pull_request_target` + 按 job 隔离 permissions：record 用 `contents: read` 跑 PR 代码；publish/cleanup 用 write 权限但**绝不 checkout PR HEAD**，只摸 `playthrough-assets` 分支。
+
+### CI 调试踩到的真坑（按时间顺序）
+
+1. **`gifski` 不在 apt**：它是 Rust 二进制，apt 装不上。换成 ffmpeg `palettegen → paletteuse` 两遍——质量接近，少一个依赖。
+2. **子进程 stdio 被 null 吞掉**：harness 默认 `Stdio::null()` 让 CI 失败时只看到 "VDP-ready timeout 180s" 这种无意义错误。补了 `VIBE_TEST_CHILD_LOG_DIR=<dir>` env：把子进程 stdout/stderr 写到 `<dir>/<pkg>.log` + `RUST_LOG=info`，CI workflow `if: failure()` 时 `::group::` dump 出来。**这是后续所有 CI 问题能查到根因的基础设施**。
+3. **VIBE_HEADLESS 在 Xvfb 下挂 lavapipe**：unmapped X11 窗口让 vulkan surface init 出问题；playthrough 录制也需要可见窗口才能让 ffmpeg 抓到内容。加了 `VIBE_TEST_FORCE_VISIBLE=1` env override，CI 默认开启。
+4. **`libxkbcommon-x11-0` 不在 runner**：winit 启动时 dlopen 它处理 X11 键盘映射，缺失直接 panic。子进程日志（靠 #2 的基础设施）露出根因，apt 加上即可。
+
+### 最终落地
+
+- 引擎/harness 改动：`crates/vibe_platform/src/desktop.rs`、`crates/vibe_test/src/{lib,client,harness}.rs`（顺手把 lib.rs 超 250 行拆成 client + harness）
+- 新增 env：`VIBE_HEADLESS`、`VIBE_TEST_FORCE_VISIBLE`、`VIBE_TEST_RELEASE`、`VIBE_TEST_CHILD_LOG_DIR`
+- 新增 `LaunchOptions::visible(bool)` / `LaunchOptions::release(bool)`
+- CI 新 job：`vdp-integration`（ui-demo + Xvfb + lavapipe，~4 分钟）
+- 新 workflow：`playthrough.yml`（pull_request_target + 三 job 权限隔离）
+- 新测试：`examples/ui/tests/playthrough.rs`（人速场景，~12s）
+- AGENTS.md「为游戏编写测试」+「测试与验证」小节同步更新
+
+### 合并后必须做的两步（不做就没 GIF）
+
+1. 建 orphan 分支：
+
+   ```bash
+   git checkout --orphan playthrough-assets
+   git rm -rf .
+   git commit --allow-empty -m 'init: playthrough assets branch'
+   git push -u origin playthrough-assets
+   ```
+
+2. Settings → Actions → Workflow permissions 允许 write contents + PR 评论。
+
+完成后第一个改 `crates/vibe_render|vibe_ui|vibe_platform|vibe_test/**` 或 `examples/**` 的 PR 会自动收到 inline GIF 评论。
