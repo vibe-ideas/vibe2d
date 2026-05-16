@@ -133,10 +133,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install audio + display + Vulkan deps
+        # libxkbcommon-x11-0 is the runtime winit dlopens for X11 keyboard
+        # mapping; without it the spawned game panics on startup. The dev
+        # package isn't strictly needed at runtime but pulls in headers if
+        # any crate compiles xkb bindings.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libasound2-dev \
+            libxkbcommon-x11-0 \
             xvfb \
             mesa-vulkan-drivers \
             vulkan-tools
