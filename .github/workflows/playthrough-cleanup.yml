@@ -1,0 +1,36 @@
+name: PR Playthrough Cleanup
+
+# Deletes any pr-<NNN>-<sha>.gif files attached to a PR once it closes,
+# so the orphan `playthrough-assets` branch doesn't grow unbounded.
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    name: Remove playthrough GIFs for closed PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: playthrough-assets
+
+      - name: Delete this PR's GIFs
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # `nullglob` so a no-match expands to empty instead of literal pattern.
+          shopt -s nullglob
+          files=( "pr-${PR}-"*.gif )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No playthrough GIFs found for PR ${PR} — nothing to clean."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm "${files[@]}"
+          git commit -m "cleanup: remove playthrough GIFs for closed pr-${PR}"
+          git push

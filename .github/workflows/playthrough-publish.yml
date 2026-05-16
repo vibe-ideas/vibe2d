@@ -1,0 +1,72 @@
+name: PR Playthrough Publish
+
+# Half two of the two-workflow split (see playthrough-record.yml).
+# This job is the only one that ever holds write permissions, and it
+# deliberately never checks out PR code — it only downloads the artifact
+# the record workflow produced, pushes the GIF to the assets branch, and
+# comments on the PR.
+
+on:
+  workflow_run:
+    workflows: ["PR Playthrough Record"]
+    types: [completed]
+
+jobs:
+  publish:
+    # Only publish if the record workflow itself succeeded — failed
+    # builds shouldn't produce broken GIF comments.
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Check out the orphan assets branch so we can push the new GIF on
+      # top of existing ones. NOT the PR's source — that would defeat the
+      # whole point of the split.
+      - uses: actions/checkout@v4
+        with:
+          ref: playthrough-assets
+
+      - name: Download artifact from record workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: playthrough
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: /tmp/dl
+
+      - name: Read PR metadata
+        id: meta
+        run: |
+          echo "pr=$(cat /tmp/dl/meta/pr_number)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(cat /tmp/dl/meta/head_sha)" >> "$GITHUB_OUTPUT"
+
+      - name: Commit GIF to assets branch
+        env:
+          PR: ${{ steps.meta.outputs.pr }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        run: |
+          SHORT="${SHA:0:7}"
+          cp /tmp/dl/play.gif "pr-${PR}-${SHORT}.gif"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "pr-${PR}-${SHORT}.gif"
+          git commit -m "playthrough: pr-${PR} @ ${SHORT}"
+          git push
+
+      - uses: actions/github-script@v7
+        env:
+          PR: ${{ steps.meta.outputs.pr }}
+          SHA: ${{ steps.meta.outputs.sha }}
+        with:
+          script: |
+            const pr = parseInt(process.env.PR, 10);
+            const short = process.env.SHA.slice(0, 7);
+            const url = `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/playthrough-assets/pr-${pr}-${short}.gif`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+              body: `### 🎮 Playthrough\n\n![ui-demo playthrough](${url})\n\n*Auto-generated from ${short} via Xvfb + lavapipe + ffmpeg.*`,
+            });

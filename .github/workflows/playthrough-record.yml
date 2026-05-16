@@ -1,0 +1,94 @@
+name: PR Playthrough Record
+
+# Two-workflow split (see playthrough-publish.yml) per
+# https://securitylab.github.com/research/github-actions-preventing-pwn-requests/
+# This workflow runs PR-controlled code (cargo test) but holds NO write
+# token. It only produces an artifact; the sibling publish workflow turns
+# the artifact into a PR comment.
+
+on:
+  pull_request:
+    paths:
+      - 'crates/vibe_render/**'
+      - 'crates/vibe_ui/**'
+      - 'crates/vibe_platform/**'
+      - 'crates/vibe_test/**'
+      - 'examples/**'
+      - '.github/workflows/playthrough-record.yml'
+
+# Cancel superseded runs on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: Record ui-demo playthrough
+    runs-on: ubuntu-latest
+    # Critical: read-only token. PR-controlled `cargo test` runs below but
+    # cannot push to the repo or comment on the PR. Publish workflow does
+    # both, in a separate sandbox that never checks out PR code.
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install audio + display + Vulkan + recording deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            xvfb \
+            mesa-vulkan-drivers \
+            vulkan-tools \
+            ffmpeg \
+            gifski
+
+      - name: Start Xvfb + ffmpeg recorder
+        run: |
+          # Match window size from examples/ui/game.yaml so x11grab captures
+          # the whole window cleanly.
+          Xvfb :99 -screen 0 1024x640x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+          # Give Xvfb a moment to settle before ffmpeg attaches.
+          sleep 1
+          ffmpeg -y -f x11grab -video_size 1024x640 -framerate 30 \
+            -i :99 -c:v libx264 -pix_fmt yuv420p \
+            /tmp/play.mp4 \
+            > /tmp/ffmpeg.log 2>&1 &
+          echo $! > /tmp/ffmpeg.pid
+
+      - name: Run playthrough scenario
+        env:
+          WGPU_BACKEND: vulkan
+          RUST_LOG: warn
+          # Spawn the game child as `cargo run --release` — lavapipe is too
+          # slow under debug to hit the harness' 180 s readiness timeout.
+          VIBE_TEST_RELEASE: "1"
+        run: |
+          cargo test -p ui-demo --release \
+            --test playthrough -- --ignored --nocapture
+
+      - name: Stop recorder + convert to GIF
+        run: |
+          kill -INT "$(cat /tmp/ffmpeg.pid)" || true
+          # Wait for ffmpeg to flush the trailer.
+          sleep 2
+          gifski -o /tmp/play.gif --fps 15 \
+            --width 720 --quality 85 /tmp/play.mp4
+
+      - name: Save PR metadata for publish job
+        run: |
+          mkdir -p /tmp/meta
+          echo "${{ github.event.pull_request.number }}" > /tmp/meta/pr_number
+          echo "${{ github.event.pull_request.head.sha }}" > /tmp/meta/head_sha
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playthrough
+          path: |
+            /tmp/play.gif
+            /tmp/meta/
+          retention-days: 7
