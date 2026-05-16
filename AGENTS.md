@@ -328,13 +328,15 @@ let mut h = GameHarness::launch_with(opts).await.unwrap();
 
 `ubuntu-latest` 上跑 `xvfb-run cargo test -p ui-demo --release -- --ignored`，环境是 Xvfb + lavapipe（软件 Vulkan）+ 上面四个 env。失败时一个 post-step 把 `${runner.temp}/child-logs/*.log` 通过 `::group::` 折叠 dump 出来。
 
-**PR Playthrough MP4**（`.github/workflows/playthrough.yml`）：
+**PR Playthrough**（`.github/workflows/playthrough.yml`）：
 
 单 workflow + `pull_request_target`，按 job 隔离权限：
 
-- `record` — matrix 跑全部 5 个 demo（aoi-demo / flappy-bird / mari0 / tetris / ui-demo），各自的 `examples/<game>/tests/playthrough.rs` 用 `ScreenshotPacer` 通过 VDP `game.screenshot` 在游戏自身 wgpu 输出上做 readback 抓 15fps PNG 序列，跑完 ffmpeg 拼成 MP4。`contents: read`，1 个 demo 挂不影响其他 4 个（`fail-fast: false`）。timeout-minutes: 15
-- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，下载所有 artifact + push 5 个 MP4 到 orphan 分支 `playthrough-assets` + **一条**评论里 inline 全部 5 个 `<video>` 播放器
-- `cleanup` — `contents: write`，PR closed 时删该 PR 的所有 MP4（glob `pr-${PR}-*.mp4`，兼容旧 `.gif`）
+- `record` — matrix 跑全部 5 个 demo（aoi-demo / flappy-bird / mari0 / tetris / ui-demo），各自的 `examples/<game>/tests/playthrough.rs` 用 `ScreenshotPacer` 通过 VDP `game.screenshot` 在游戏自身 wgpu 输出上做 readback 抓 15fps PNG 序列，跑完 ffmpeg 同时拼成 GIF（inline 预览）+ MP4（高质量下载）。`contents: read`，1 个 demo 挂不影响其他 4 个（`fail-fast: false`）。timeout-minutes: 15
+- `publish` — `contents+pull-requests: write`，**不 checkout PR 代码**，下载所有 artifact + push 5 对 GIF/MP4 到 orphan 分支 `playthrough-assets` + **一条**评论里 inline 5 个 GIF + 5 个 MP4 下载链接
+- `cleanup` — `contents: write`，PR closed 时删该 PR 的所有 GIF/MP4（glob `pr-${PR}-*.{mp4,gif}`）
+
+**为什么是 GIF inline + MP4 链接的组合**：GitHub 的 PR 评论 HTML sanitizer **只允许 `<video>` 标签的 src 是 `user-attachments` URL**（Web UI 拖拽上传产生），任何 `raw.githubusercontent.com` 上的 MP4 走 `<video>` 都会被剥掉。user-attachments endpoint 没有公开 API，CI 拿不到。结论：自动评论里 inline 视频不可能，GIF（`![]()`）是唯一被 sanitizer 接受的 inline 动画格式；要 scrub 控制就点 MP4 下载链接，浏览器内置播放器有控件。
 
 **为什么不用 x11grab**：早期尝试过 Xvfb + ffmpeg x11grab，但 wgpu/lavapipe 的 Vulkan WSI 在 Xvfb 下渲染正常但不 present 到 X11 drawable，x11grab 抓到全黑。VDP screenshot 直接走 wgpu texture readback，绕过整个 X11 display path，YAVG 实测从 16（Xvfb 默认灰）跳到 100+（真实内容）。完整复盘见 `docs/plans/headless_tests.md` 末尾的实施记录。
 

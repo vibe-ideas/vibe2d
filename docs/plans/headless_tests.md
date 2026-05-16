@@ -557,4 +557,19 @@ Step 4 原计划只录 1 个 demo，后来扩到全部 5 个：
 - artifact 文件大小 `ls -la` 输出在 macOS 上日期列是 "May" 不是 bytes，要 `stat -f '%z'` 看真实字节数
 - CI debugging 砸了不少 GitHub Actions 计费，下次类似拿不准的 verify 流程，先缩到单 example + `timeout-minutes` 上限再 push
 
+### MP4 inline 的死路（PR #5 收尾发现）
+
+切到 MP4 后想用 `<video src="raw.githubusercontent.com/.../play.mp4" controls></video>` inline 嵌入 PR 评论。**GitHub 的 sanitizer 把 `<video>` 全部剥光**，只渲染外层 markdown，视频播放器消失。
+
+测了 4 种格式（PR #5 issuecomment-4466794074 / -4466804920）：
+- ❌ `<video src controls>` 从 raw.githubusercontent — 被 strip
+- ❌ 裸 MP4 URL 单独一行 — 显示成可点链接，不 embed
+- ❌ `<img src=mp4>` — 裂图
+- ✅ 拖拽上传的 user-attachments URL — 唯一被信任，但 endpoint 没公开 API，CI 拿不到
+- ✅ GIF `![]()` inline — 老办法仍然可靠
+
+**最终方案**：workflow 改为同时输出 GIF（inline 预览）+ MP4（评论里贴下载链接，要 scrub 就点开浏览器内置播放器）。
+
+教训：在挑 inline 媒体格式之前，应该先用 4-format test comment 实测 GitHub 渲染再决定。这条已记入 memory `github-pr-video-render`。
+
 详细 fix PR：vibe-ideas/vibe2d#5（待评审）。

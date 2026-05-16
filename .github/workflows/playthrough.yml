@@ -24,11 +24,13 @@ name: PR Playthrough
 #   `game.screenshot` over VDP at 15fps and writes PNGs. This is a
 #   wgpu texture readback — totally independent of the X11 display
 #   path, which under Xvfb + lavapipe presents to a drawable that
-#   x11grab can't see (verified with diagnostic: VDP screenshots
-#   come back YAVG=103, x11grab gave YAVG=16/black). After the
-#   scenario completes, ffmpeg assembles the PNGs into an MP4. MP4
-#   over GIF because GitHub's <video> tag in comments has full
-#   play/pause/scrub controls and the files are 5-10x smaller.
+#   x11grab can't see (verified: VDP screenshots come back YAVG=103,
+#   x11grab gave YAVG=16/black). After the scenario completes,
+#   ffmpeg assembles the PNGs into both GIF (for inline comment
+#   preview) and MP4 (for scrubable download). GitHub's PR-comment
+#   sanitizer only renders <video> tags whose src is a
+#   user-attachments URL (web UI drag-drop, no API), so GIF inline +
+#   MP4 link is the only working combo for an auto-posted comment.
 #
 # References:
 #   https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#pull_request_target
@@ -141,26 +143,34 @@ jobs:
             echo "No child log dir at $dir"
           fi
 
-      - name: Assemble PNGs into MP4
+      - name: Assemble PNGs into GIF + MP4
         if: always()
         env:
           PKG: ${{ matrix.game.pkg }}
         run: |
           dir="/tmp/recording/${PKG}"
           if [ ! -d "$dir" ] || [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
-            echo "No PNGs in $dir — skipping MP4 assembly."
+            echo "No PNGs in $dir — skipping assembly."
             exit 0
           fi
-          # h264 + yuv420p + faststart for universal inline playback
-          # in GitHub PR comments via <video>. Even dims required by
-          # libx264.
+          # GIF for inline preview in PR comments. <video> tags get
+          # stripped by GitHub's sanitizer unless the src is a
+          # user-attachments URL (web UI drag-drop only — no API),
+          # so GIF is the only inline format that works for an
+          # auto-posted comment. Smaller width keeps it cheap.
+          ffmpeg -y -framerate 15 -i "$dir/%04d.png" \
+            -vf "scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+            /tmp/play.gif
+          # MP4 alongside as the higher-quality download — reviewers
+          # who want scrub controls click the link in the comment.
+          # h264 + yuv420p + faststart + even dims (libx264 requires).
           ffmpeg -y -framerate 15 -i "$dir/%04d.png" \
             -c:v libx264 -pix_fmt yuv420p \
             -preset medium -crf 23 \
             -movflags +faststart \
             -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
             /tmp/play.mp4
-          ls -la /tmp/play.mp4
+          ls -la /tmp/play.gif /tmp/play.mp4
 
       - name: Save PR metadata for publish job
         if: always()
@@ -175,6 +185,7 @@ jobs:
         with:
           name: playthrough-${{ matrix.game.pkg }}
           path: |
+            /tmp/play.gif
             /tmp/play.mp4
             /tmp/meta/
           retention-days: 7
@@ -203,12 +214,15 @@ jobs:
           pattern: playthrough-*
           path: /tmp/dl
 
-      - name: Stage MP4s + build comment body
+      - name: Stage GIF+MP4 + build comment body
         id: stage
-        # Walks every downloaded artifact dir, copies the MP4 into
-        # the assets branch checkout under a per-game name, and
-        # builds a single markdown body that inlines each <video>
-        # that exists.
+        # For each game we publish two files: the GIF for inline
+        # preview in the PR comment (only format the GitHub
+        # sanitizer renders inline from raw.githubusercontent.com)
+        # and the MP4 as a "watch with controls" download link.
+        # See memory/github-pr-video-render — <video> tags only
+        # render for user-attachments URLs which there's no API to
+        # produce, so the GIF+link combo is the working compromise.
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -235,8 +249,9 @@ jobs:
           # Sort so the body is stable across re-runs.
           for d in $(ls -1d /tmp/dl/playthrough-* 2>/dev/null | sort); do
             pkg=$(cat "$d/meta/pkg" 2>/dev/null || echo "")
-            if [ -z "$pkg" ] || [ ! -f "$d/play.mp4" ]; then
-              echo "Skipping $d (missing meta or play.mp4)"
+            # Need at least the GIF; MP4 is bonus.
+            if [ -z "$pkg" ] || [ ! -f "$d/play.gif" ]; then
+              echo "Skipping $d (missing meta or play.gif)"
               continue
             fi
             if [ -z "$pr" ]; then
@@ -244,17 +259,26 @@ jobs:
               sha=$(cat "$d/meta/head_sha")
             fi
             short="${sha:0:7}"
-            out="pr-${pr}-${short}-${pkg}.mp4"
-            cp "$d/play.mp4" "$out"
-            git add "$out"
+            gif_out="pr-${pr}-${short}-${pkg}.gif"
+            cp "$d/play.gif" "$gif_out"
+            git add "$gif_out"
+            gif_url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${gif_out}"
 
-            url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${out}"
-            printf '#### %s\n\n<video src="%s" controls width="720"></video>\n\n' \
-              "$pkg" "$url" >> "$body_file"
+            mp4_link=""
+            if [ -f "$d/play.mp4" ]; then
+              mp4_out="pr-${pr}-${short}-${pkg}.mp4"
+              cp "$d/play.mp4" "$mp4_out"
+              git add "$mp4_out"
+              mp4_url="https://raw.githubusercontent.com/${{ github.repository }}/playthrough-assets/${mp4_out}"
+              mp4_link=" · [📹 watch as MP4](${mp4_url})"
+            fi
+
+            printf '#### %s\n\n![%s playthrough](%s)\n\n_GIF inline preview%s_\n\n' \
+              "$pkg" "$pkg" "$gif_url" "$mp4_link" >> "$body_file"
           done
 
           if git diff --cached --quiet; then
-            echo "No MP4s ready to publish — skipping commit + comment."
+            echo "Nothing ready to publish — skipping commit + comment."
             echo "skip=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -297,7 +321,7 @@ jobs:
         with:
           ref: playthrough-assets
 
-      - name: Delete this PR's MP4s
+      - name: Delete this PR's playthrough files
         env:
           PR: ${{ github.event.pull_request.number }}
         run: |
