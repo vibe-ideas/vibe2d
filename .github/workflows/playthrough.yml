@@ -78,6 +78,12 @@ jobs:
         # gifski isn't in Ubuntu apt; we use ffmpeg's
         # palettegen/paletteuse instead. libxkbcommon-x11-0 is the
         # runtime winit dlopens for X11 keyboard mapping.
+        # fluxbox + x11-utils + imagemagick are added because earlier
+        # GIFs came out uniformly black — winit on Xvfb without a
+        # window manager produces an unmapped (or off-screen) window
+        # that lavapipe still renders into but ffmpeg can't capture.
+        # imagemagick's `import` + x11-utils' `xwininfo` give us a
+        # mid-recording screenshot for diagnosis next time it breaks.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -86,17 +92,48 @@ jobs:
             xvfb \
             mesa-vulkan-drivers \
             vulkan-tools \
-            ffmpeg
+            ffmpeg \
+            fluxbox \
+            x11-utils \
+            imagemagick
 
-      - name: Start Xvfb + ffmpeg recorder
+      - name: Start Xvfb + fluxbox + ffmpeg recorder
         env:
           W: ${{ matrix.game.width }}
           H: ${{ matrix.game.height }}
         run: |
-          Xvfb :99 -screen 0 ${W}x${H}x24 &
-          echo "DISPLAY=:99" >> $GITHUB_ENV
+          # +extension RANDR/GLX/COMPOSITE: lavapipe + winit need these.
+          # -noreset: keep the server alive across client disconnects.
+          # -ac: skip access control so any client can connect.
+          Xvfb :99 -screen 0 "${W}x${H}x24" \
+            +extension RANDR +extension GLX +extension COMPOSITE \
+            -noreset -ac &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
           sleep 1
-          ffmpeg -y -f x11grab -video_size ${W}x${H} -framerate 30 \
+
+          # Without a WM the X server never sends MapNotify, so winit
+          # ends up with a withdrawn window invisible to x11grab.
+          # fluxbox is the smallest battle-tested option that hands
+          # winit a sane parent and ICCCM exchange.
+          DISPLAY=:99 fluxbox -display :99 \
+            > /tmp/fluxbox.log 2>&1 &
+          sleep 1
+
+          # Diagnostic dumps mid-recording. If the next round still
+          # shows a black GIF, the screenshots in the artifact tell
+          # us exactly what Xvfb's framebuffer actually had.
+          mkdir -p /tmp/diag
+          for delay in 4 8 12; do
+            (
+              sleep "$delay"
+              DISPLAY=:99 xwininfo -root -tree \
+                > "/tmp/diag/xwininfo-${delay}s.txt" 2>&1 || true
+              DISPLAY=:99 import -window root \
+                "/tmp/diag/screen-${delay}s.png" 2>/dev/null || true
+            ) &
+          done
+
+          ffmpeg -y -f x11grab -video_size "${W}x${H}" -framerate 30 \
             -i :99 -c:v libx264 -pix_fmt yuv420p \
             /tmp/play.mp4 \
             > /tmp/ffmpeg.log 2>&1 &
@@ -148,7 +185,11 @@ jobs:
           path: |
             /tmp/play.gif
             /tmp/meta/
+            /tmp/diag/
+            /tmp/ffmpeg.log
+            /tmp/fluxbox.log
           retention-days: 7
+          if-no-files-found: warn
 
   # ── Publish: WRITE token, NEVER touches PR code ───────────────
   publish:
