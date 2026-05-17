@@ -1,0 +1,43 @@
+meta:
+  name: "Tactics Demo"
+  version: "0.1.0"
+
+window:
+  width: 960
+  height: 640
+  title: "Tactics Demo - Vibe2D"
+  vsync: true
+
+virtual_resolution:
+  width: 960
+  height: 640
+
+assets:
+  fonts:
+    ui: "assets/fonts/ui.ttf:16"
+    title: "assets/fonts/ui.ttf:24"
+    small: "assets/fonts/ui.ttf:12"
+
+input:
+  actions:
+    confirm:
+      keys: ["Enter", "Space"]
+      mouse_buttons: ["Left"]
+    cancel:
+      keys: ["Escape"]
+      mouse_buttons: ["Right"]
+    cursor_up:
+      keys: ["Up", "W"]
+    cursor_down:
+      keys: ["Down", "S"]
+    cursor_left:
+      keys: ["Left", "A"]
+    cursor_right:
+      keys: ["Right", "D"]
+    end_turn:
+      keys: ["E"]
+
+debug:
+  vdp:
+    enabled: true
+    port: 9233
